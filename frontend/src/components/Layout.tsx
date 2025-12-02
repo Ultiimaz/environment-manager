@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { Outlet, NavLink } from 'react-router-dom'
 import { useQuery } from '@tanstack/react-query'
 import {
@@ -8,7 +9,9 @@ import {
   Network,
   Settings,
   GitBranch,
-  RefreshCw
+  RefreshCw,
+  Menu,
+  X
 } from 'lucide-react'
 import { getNetworkStatus, getGitStatus, syncGit } from '../services/api'
 
@@ -22,6 +25,7 @@ const navItems = [
 ]
 
 export default function Layout() {
+  const [sidebarOpen, setSidebarOpen] = useState(false)
   const { data: networkStatus } = useQuery({
     queryKey: ['networkStatus'],
     queryFn: getNetworkStatus,
@@ -44,9 +48,30 @@ export default function Layout() {
   }
 
   return (
-    <div className="flex h-screen">
+    <div className="flex h-screen bg-gray-900">
+      {/* Mobile menu button */}
+      <button
+        onClick={() => setSidebarOpen(!sidebarOpen)}
+        className="lg:hidden fixed top-4 left-4 z-50 p-2 bg-gray-800 rounded-lg text-white"
+      >
+        {sidebarOpen ? <X size={24} /> : <Menu size={24} />}
+      </button>
+
+      {/* Overlay for mobile */}
+      {sidebarOpen && (
+        <div
+          className="lg:hidden fixed inset-0 bg-black/50 z-30"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
-      <aside className="w-64 bg-gray-800 border-r border-gray-700 flex flex-col">
+      <aside className={`
+        fixed lg:static inset-y-0 left-0 z-40
+        w-64 bg-gray-800 border-r border-gray-700 flex flex-col
+        transform transition-transform duration-300 ease-in-out
+        ${sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'}
+      `}>
         <div className="p-4 border-b border-gray-700">
           <h1 className="text-xl font-bold text-white">Environment Manager</h1>
           <p className="text-sm text-gray-400 mt-1">
@@ -54,12 +79,13 @@ export default function Layout() {
           </p>
         </div>
 
-        <nav className="flex-1 p-4">
+        <nav className="flex-1 p-4 overflow-y-auto">
           <ul className="space-y-2">
             {navItems.map(({ to, icon: Icon, label }) => (
               <li key={to}>
                 <NavLink
                   to={to}
+                  onClick={() => setSidebarOpen(false)}
                   className={({ isActive }) =>
                     `flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
                       isActive
@@ -113,8 +139,10 @@ export default function Layout() {
       </aside>
 
       {/* Main content */}
-      <main className="flex-1 overflow-auto bg-gray-900">
-        <Outlet />
+      <main className="flex-1 overflow-auto lg:ml-0 pt-16 lg:pt-0">
+        <div className="p-4 sm:p-6 lg:p-8">
+          <Outlet />
+        </div>
       </main>
     </div>
   )
