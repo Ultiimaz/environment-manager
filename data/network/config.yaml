@@ -1,0 +1,10 @@
+base_domain: "localhost"
+network_name: "env-manager-net"
+subnet: "172.20.0.0/16"
+
+traefik:
+  dashboard_enabled: true
+  https_enabled: false
+
+coredns:
+  upstream_dns: "8.8.8.8"

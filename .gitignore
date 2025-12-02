@@ -1,0 +1,33 @@
+# Dependencies
+node_modules/
+vendor/
+
+# Build outputs
+/backend/server
+/frontend/dist/
+
+# Environment files
+.env
+.env.local
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Local config (not the template)
+.claude/settings.local.json
+
+# Playwright MCP screenshots
+.playwright-mcp/
+
+# Windows artifacts
+nul

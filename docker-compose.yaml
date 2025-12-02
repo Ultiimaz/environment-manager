@@ -1,0 +1,77 @@
+version: '3.8'
+
+services:
+  # DNS Server - must start first
+  coredns:
+    image: coredns/coredns:latest
+    container_name: env-coredns
+    restart: unless-stopped
+    volumes:
+      - ./data/network/Corefile:/etc/coredns/Corefile:ro
+    ports:
+      - "53:53/udp"
+      - "53:53/tcp"
+    networks:
+      env-manager-net:
+        ipv4_address: 172.20.0.2
+    command: -conf /etc/coredns/Corefile
+
+  # Reverse Proxy
+  traefik:
+    image: traefik:v3.0
+    container_name: env-traefik
+    restart: unless-stopped
+    command:
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--providers.docker.network=env-manager-net"
+      - "--entrypoints.web.address=:80"
+    ports:
+      - "80:80"
+      - "8081:8080"  # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      env-manager-net:
+        ipv4_address: 172.20.0.3
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.traefik.rule=Host(`traefik.${BASE_DOMAIN:-localhost}`)"
+      - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+    depends_on:
+      - coredns
+
+  # Environment Manager (this platform)
+  manager:
+    build: .
+    image: environment-manager:latest
+    container_name: env-manager
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./data:/app/data
+      - ~/.ssh:/root/.ssh:ro
+    environment:
+      - GIT_REMOTE=${GIT_REMOTE:-}
+      - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
+      - PORT=8080
+    networks:
+      - env-manager-net
+    dns:
+      - 172.20.0.2
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.manager.rule=Host(`manager.${BASE_DOMAIN:-localhost}`)"
+      - "traefik.http.services.manager.loadbalancer.server.port=8080"
+    depends_on:
+      - coredns
+      - traefik
+
+networks:
+  env-manager-net:
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

@@ -1,0 +1,12 @@
+localhost {
+    hosts {
+        172.20.0.3 *.localhost
+        fallthrough
+    }
+    log
+}
+
+. {
+    forward . 8.8.8.8 8.8.4.4
+    log
+}
