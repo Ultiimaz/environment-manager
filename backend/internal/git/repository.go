@@ -8,6 +8,7 @@ import (
 
 	"github.com/go-git/go-git/v5"
 	"github.com/go-git/go-git/v5/config"
+	"github.com/go-git/go-git/v5/plumbing"
 	"github.com/go-git/go-git/v5/plumbing/object"
 	"github.com/go-git/go-git/v5/plumbing/transport/ssh"
 )
@@ -192,4 +193,61 @@ type CommitInfo struct {
 	Message string    `json:"message"`
 	Author  string    `json:"author"`
 	Date    time.Time `json:"date"`
+}
+
+// GetLastCommit returns the most recent commit
+func (r *Repository) GetLastCommit() (*CommitInfo, error) {
+	commits, err := r.GetRecentCommits(1)
+	if err != nil || len(commits) == 0 {
+		return nil, err
+	}
+	return &commits[0], nil
+}
+
+// HasRemoteChanges checks if the remote has commits not in the local repo
+func (r *Repository) HasRemoteChanges() (bool, error) {
+	if r.remote == "" {
+		return false, nil // No remote configured
+	}
+
+	// Fetch latest refs from remote
+	err := r.repo.Fetch(&git.FetchOptions{
+		RemoteName: "origin",
+		Auth:       r.auth,
+	})
+	if err != nil && err != git.NoErrAlreadyUpToDate {
+		return false, fmt.Errorf("fetch failed: %w", err)
+	}
+
+	// Get local HEAD
+	localRef, err := r.repo.Head()
+	if err != nil {
+		return false, fmt.Errorf("failed to get HEAD: %w", err)
+	}
+
+	// Get remote tracking ref
+	remoteRef, err := r.repo.Reference(plumbing.ReferenceName("refs/remotes/origin/master"), true)
+	if err != nil {
+		// Try main branch
+		remoteRef, err = r.repo.Reference(plumbing.ReferenceName("refs/remotes/origin/main"), true)
+		if err != nil {
+			return false, nil // No remote tracking branch yet
+		}
+	}
+
+	return localRef.Hash() != remoteRef.Hash(), nil
+}
+
+// CommitWithPrefix commits changes with a prefix in the message
+func (r *Repository) CommitWithPrefix(prefix, message string) error {
+	fullMessage := prefix + " " + message
+	return r.CommitChanges(fullMessage)
+}
+
+// CommitAndPushWithPrefix commits with prefix and pushes
+func (r *Repository) CommitAndPushWithPrefix(prefix, message string) error {
+	if err := r.CommitWithPrefix(prefix, message); err != nil {
+		return err
+	}
+	return r.Push()
 }

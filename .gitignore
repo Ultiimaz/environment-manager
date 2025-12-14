@@ -6,6 +6,10 @@ vendor/
 /backend/server
 /frontend/dist/
 
+# Runtime data (cloned repos, test configs)
+backend/data/
+data/test/
+
 # Environment files
 .env
 .env.local

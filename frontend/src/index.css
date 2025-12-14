@@ -1,14 +1,75 @@
 @import "tailwindcss";
 
+/* Theme CSS Variables */
+:root {
+  --background: 220 20% 7%;
+  --foreground: 210 20% 95%;
+
+  --card: 220 20% 10%;
+  --card-foreground: 210 20% 95%;
+
+  --popover: 220 20% 10%;
+  --popover-foreground: 210 20% 95%;
+
+  --primary: 217 91% 60%;
+  --primary-foreground: 210 20% 98%;
+
+  --secondary: 220 14% 15%;
+  --secondary-foreground: 210 20% 90%;
+
+  --muted: 220 14% 15%;
+  --muted-foreground: 215 20% 55%;
+
+  --accent: 220 14% 18%;
+  --accent-foreground: 210 20% 95%;
+
+  --destructive: 0 72% 51%;
+  --destructive-foreground: 210 20% 98%;
+
+  --success: 142 71% 45%;
+  --warning: 38 92% 50%;
+  --info: 199 89% 48%;
+
+  --border: 220 14% 18%;
+  --input: 220 14% 18%;
+  --ring: 217 91% 60%;
+
+  --radius: 0.5rem;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
 body {
   margin: 0;
   min-height: 100vh;
-  background-color: #111827;
-  color: #f3f4f6;
+  background-color: hsl(var(--background));
+  color: hsl(var(--foreground));
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
 }
 
 #root {
   min-height: 100vh;
+}
+
+/* Scrollbar styles */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: hsl(var(--secondary));
+}
+
+::-webkit-scrollbar-thumb {
+  background: hsl(var(--muted-foreground) / 0.5);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: hsl(var(--muted-foreground) / 0.7);
 }
 
 /* Terminal styles */
@@ -21,10 +82,40 @@ body {
 }
 
 .xterm-viewport::-webkit-scrollbar-track {
-  background: #1f2937;
+  background: hsl(var(--secondary));
 }
 
 .xterm-viewport::-webkit-scrollbar-thumb {
-  background: #4b5563;
+  background: hsl(var(--muted-foreground) / 0.5);
   border-radius: 4px;
+}
+
+/* Custom theme utilities */
+@theme {
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+  --color-success: hsl(var(--success));
+  --color-warning: hsl(var(--warning));
+  --color-info: hsl(var(--info));
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
 }

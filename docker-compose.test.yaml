@@ -1,0 +1,75 @@
+# Test applications for validating the infrastructure
+# Run with: docker compose -f docker-compose.yaml -f docker-compose.test.yaml up -d
+
+services:
+  # Simple whoami service - shows container info
+  whoami:
+    image: traefik/whoami:latest
+    container_name: test-whoami
+    restart: unless-stopped
+    networks:
+      - env-manager-net
+    dns:
+      - 172.21.0.2
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whoami.rule=Host(`whoami.${BASE_DOMAIN:-env.test}`)"
+      - "traefik.http.services.whoami.loadbalancer.server.port=80"
+
+  # Nginx static site
+  nginx:
+    image: nginx:alpine
+    container_name: test-nginx
+    restart: unless-stopped
+    volumes:
+      - ./data/test/nginx:/usr/share/nginx/html:ro
+    networks:
+      - env-manager-net
+    dns:
+      - 172.21.0.2
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.nginx.rule=Host(`nginx.${BASE_DOMAIN:-env.test}`)"
+      - "traefik.http.services.nginx.loadbalancer.server.port=80"
+
+  # Simple API service using httpbin
+  api:
+    image: kennethreitz/httpbin:latest
+    container_name: test-api
+    restart: unless-stopped
+    networks:
+      - env-manager-net
+    dns:
+      - 172.21.0.2
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.${BASE_DOMAIN:-env.test}`)"
+      - "traefik.http.services.api.loadbalancer.server.port=80"
+
+  # Minecraft server
+  minecraft:
+    image: itzg/minecraft-server:latest
+    container_name: test-minecraft
+    restart: unless-stopped
+    ports:
+      - "25565:25565"
+    environment:
+      - EULA=TRUE
+      - TYPE=VANILLA
+      - VERSION=LATEST
+      - MEMORY=2G
+      - MOTD=Environment Manager Test Server
+      - DIFFICULTY=normal
+      - MODE=survival
+      - MAX_PLAYERS=10
+    volumes:
+      - ./data/test/minecraft:/data
+    networks:
+      - env-manager-net
+    dns:
+      - 172.21.0.2
+
+networks:
+  env-manager-net:
+    external: true
+    name: environment-manager_env-manager-net

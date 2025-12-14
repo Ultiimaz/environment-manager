@@ -1,6 +1,7 @@
 import { Routes, Route } from 'react-router-dom'
-import Layout from './components/Layout'
+import { AppLayout } from './components/layout'
 import Dashboard from './pages/Dashboard'
+import Repositories from './pages/Repositories'
 import Containers from './pages/Containers'
 import ContainerDetail from './pages/ContainerDetail'
 import Volumes from './pages/Volumes'
@@ -11,8 +12,9 @@ import Settings from './pages/Settings'
 function App() {
   return (
     <Routes>
-      <Route path="/" element={<Layout />}>
+      <Route path="/" element={<AppLayout />}>
         <Route index element={<Dashboard />} />
+        <Route path="repos" element={<Repositories />} />
         <Route path="containers" element={<Containers />} />
         <Route path="containers/:id" element={<ContainerDetail />} />
         <Route path="volumes" element={<Volumes />} />

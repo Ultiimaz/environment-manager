@@ -41,11 +41,18 @@ type ComposeServiceStatus struct {
 	Subdomain   string `json:"subdomain,omitempty"`
 }
 
+// ServiceSubdomain maps a service to its subdomain and port
+type ServiceSubdomain struct {
+	Subdomain string `json:"subdomain" yaml:"subdomain"`
+	Port      int    `json:"port" yaml:"port"`
+}
+
 // CreateComposeProjectRequest represents a request to create/import a compose project
 type CreateComposeProjectRequest struct {
-	ProjectName   string `json:"project_name"`
-	ComposeYAML   string `json:"compose_yaml"`           // The actual compose file content
-	EnvContent    string `json:"env_content,omitempty"`  // Optional .env file content
+	ProjectName string                      `json:"project_name"`
+	ComposeYAML string                      `json:"compose_yaml"`                    // The actual compose file content
+	EnvContent  string                      `json:"env_content,omitempty"`           // Optional .env file content
+	Subdomains  map[string]ServiceSubdomain `json:"subdomains,omitempty"`            // service name -> subdomain config
 }
 
 // UpdateComposeProjectRequest represents a request to update a compose project

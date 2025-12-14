@@ -110,6 +110,23 @@ export interface GitCommit {
   date: string;
 }
 
+export interface ContainerStats {
+  container_id: string;
+  container_name: string;
+  timestamp: string;
+  cpu_percent: number;
+  memory_usage: number;
+  memory_limit: number;
+  memory_percent: number;
+  network_rx_bytes: number;
+  network_tx_bytes: number;
+  block_read_bytes: number;
+  block_write_bytes: number;
+  pids: number;
+}
+
+export type ContainerState = "running" | "paused" | "restarting" | "stopped" | "created" | "exited" | "dead"
+
 export interface SyncResult {
   success: boolean;
   pulled_changes: boolean;
@@ -126,4 +143,41 @@ export interface ApiResponse<T> {
     code: string;
     message: string;
   };
+}
+
+export interface Repository {
+  id: string;
+  name: string;
+  url: string;
+  branch: string;
+  local_path: string;
+  has_token: boolean;
+  cloned_at: string;
+  last_pulled: string;
+  compose_files: string[];
+}
+
+export interface CloneRequest {
+  url: string;
+  branch?: string;
+  token?: string;
+}
+
+export interface FileInfo {
+  name: string;
+  is_dir: boolean;
+  size: number;
+}
+
+export interface ServiceSubdomain {
+  subdomain: string;
+  port: number;
+}
+
+export interface SubdomainEntry {
+  subdomain: string;
+  project_name: string;
+  service_name: string;
+  port: number;
+  created_at: string;
 }

@@ -12,9 +12,13 @@ import (
 	"github.com/environment-manager/backend/internal/api"
 	"github.com/environment-manager/backend/internal/backup"
 	"github.com/environment-manager/backend/internal/config"
+	"github.com/environment-manager/backend/internal/credentials"
 	"github.com/environment-manager/backend/internal/docker"
 	"github.com/environment-manager/backend/internal/git"
+	"github.com/environment-manager/backend/internal/proxy"
+	"github.com/environment-manager/backend/internal/repos"
 	"github.com/environment-manager/backend/internal/state"
+	"github.com/environment-manager/backend/internal/stats"
 	"go.uber.org/zap"
 )
 
@@ -58,16 +62,69 @@ func main() {
 	backupScheduler := backup.NewScheduler(dockerClient, gitRepo, configLoader, cfg.DataDir, logger)
 	backupScheduler.Start()
 
+	// Initialize stats store and collector
+	statsStore := stats.NewStore(1*time.Hour, 720) // 1 hour of history, 720 data points
+	statsCollector := stats.NewCollector(dockerClient, statsStore, logger)
+
+	// Start watching stats for all running containers
+	if err := statsCollector.WatchAllRunning(); err != nil {
+		logger.Warn("Failed to start stats collection", zap.Error(err))
+	}
+
+	// Initialize credential store for repository tokens
+	var credKey []byte
+	if key := os.Getenv("CREDENTIAL_KEY"); key != "" {
+		credKey = []byte(key)
+		if len(credKey) != 32 {
+			logger.Warn("CREDENTIAL_KEY should be 32 bytes, token storage disabled")
+			credKey = nil
+		}
+	}
+	credStore, err := credentials.NewStore(cfg.DataDir+"/.credentials", credKey)
+	if err != nil {
+		logger.Warn("Failed to initialize credential store", zap.Error(err))
+	}
+
+	// Initialize repository manager
+	reposManager, err := repos.NewManager(cfg.DataDir+"/repos", credStore)
+	if err != nil {
+		logger.Fatal("Failed to initialize repos manager", zap.Error(err))
+	}
+
+	// Initialize subdomain registry and proxy manager
+	subdomainRegistry, err := proxy.NewRegistry(cfg.DataDir + "/subdomains.yaml")
+	if err != nil {
+		logger.Warn("Failed to initialize subdomain registry", zap.Error(err))
+	}
+
+	var proxyManager *proxy.Manager
+	if subdomainRegistry != nil {
+		proxyManager, err = proxy.NewManager(cfg.DataDir, cfg.BaseDomain, subdomainRegistry, logger)
+		if err != nil {
+			logger.Warn("Failed to initialize proxy manager", zap.Error(err))
+		} else {
+			// Update CoreDNS on startup
+			if err := proxyManager.UpdateCoreDNS(context.Background()); err != nil {
+				logger.Warn("Failed to update CoreDNS on startup", zap.Error(err))
+			}
+		}
+	}
+
 	// Initialize API router
 	router := api.NewRouter(api.RouterConfig{
-		DockerClient:  dockerClient,
-		GitRepo:       gitRepo,
-		ConfigLoader:  configLoader,
-		StateManager:  stateManager,
+		DockerClient:    dockerClient,
+		GitRepo:         gitRepo,
+		ConfigLoader:    configLoader,
+		StateManager:    stateManager,
 		BackupScheduler: backupScheduler,
-		StaticDir:     cfg.StaticDir,
-		BaseDomain:    cfg.BaseDomain,
-		Logger:        logger,
+		StatsStore:      statsStore,
+		StatsCollector:  statsCollector,
+		ReposManager:    reposManager,
+		ProxyManager:    proxyManager,
+		StaticDir:       cfg.StaticDir,
+		DataDir:         cfg.DataDir,
+		BaseDomain:      cfg.BaseDomain,
+		Logger:          logger,
 	})
 
 	// Create HTTP server
@@ -98,6 +155,7 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 
+	statsCollector.StopAll()
 	backupScheduler.Stop()
 
 	if err := server.Shutdown(ctx); err != nil {

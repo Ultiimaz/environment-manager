@@ -13,7 +13,10 @@ import (
 	"github.com/environment-manager/backend/internal/config"
 	"github.com/environment-manager/backend/internal/docker"
 	"github.com/environment-manager/backend/internal/git"
+	"github.com/environment-manager/backend/internal/proxy"
+	"github.com/environment-manager/backend/internal/repos"
 	"github.com/environment-manager/backend/internal/state"
+	"github.com/environment-manager/backend/internal/stats"
 	"go.uber.org/zap"
 )
 
@@ -24,7 +27,12 @@ type RouterConfig struct {
 	ConfigLoader    *config.Loader
 	StateManager    *state.Manager
 	BackupScheduler *backup.Scheduler
+	StatsStore      *stats.Store
+	StatsCollector  *stats.Collector
+	ReposManager    *repos.Manager
+	ProxyManager    *proxy.Manager
 	StaticDir       string
+	DataDir         string
 	BaseDomain      string
 	Logger          *zap.Logger
 }
@@ -50,11 +58,14 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	// Create handlers
 	containerHandler := handlers.NewContainerHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.StateManager, cfg.GitRepo, cfg.BaseDomain, cfg.Logger)
 	volumeHandler := handlers.NewVolumeHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.BackupScheduler, cfg.GitRepo, cfg.Logger)
-	composeHandler := handlers.NewComposeHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.StateManager, cfg.GitRepo, cfg.BaseDomain, cfg.Logger)
-	networkHandler := handlers.NewNetworkHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.GitRepo, cfg.Logger)
+	composeHandler := handlers.NewComposeHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.StateManager, cfg.ProxyManager, cfg.GitRepo, cfg.BaseDomain, cfg.DataDir, cfg.Logger)
+	networkHandler := handlers.NewNetworkHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.ProxyManager, cfg.GitRepo, cfg.Logger)
 	gitHandler := handlers.NewGitHandler(cfg.GitRepo, cfg.StateManager, cfg.Logger)
 	logsHandler := handlers.NewLogsHandler(cfg.DockerClient)
 	webhookHandler := handlers.NewWebhookHandler(cfg.GitRepo, cfg.StateManager, cfg.Logger)
+	statsHandler := handlers.NewStatsHandler(cfg.DockerClient, cfg.StatsStore, cfg.StatsCollector)
+	execHandler := handlers.NewExecHandler(cfg.DockerClient, cfg.Logger)
+	reposHandler := handlers.NewReposHandler(cfg.ReposManager)
 
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
@@ -72,7 +83,13 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Post("/{id}/stop", containerHandler.Stop)
 			r.Post("/{id}/restart", containerHandler.Restart)
 			r.Get("/{id}/logs", containerHandler.GetLogs)
+			r.Get("/{id}/stats", statsHandler.GetStats)
+			r.Get("/{id}/stats/history", statsHandler.GetStatsHistory)
+			r.Post("/{id}/exec", execHandler.Exec)
 		})
+
+		// Stats (aggregate)
+		r.Get("/stats", statsHandler.GetAllStats)
 
 		// Volumes
 		r.Route("/volumes", func(r chi.Router) {
@@ -103,6 +120,10 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Get("/", networkHandler.Get)
 			r.Put("/", networkHandler.Update)
 			r.Get("/status", networkHandler.Status)
+			r.Get("/routes", networkHandler.ListRoutes)
+			r.Post("/routes", networkHandler.AddRoute)
+			r.Delete("/routes/{subdomain}", networkHandler.DeleteRoute)
+			r.Get("/routes/{subdomain}/check", networkHandler.CheckSubdomain)
 		})
 
 		// Git
@@ -110,6 +131,18 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Get("/status", gitHandler.Status)
 			r.Post("/sync", gitHandler.Sync)
 			r.Get("/history", gitHandler.History)
+		})
+
+		// Repositories
+		r.Route("/repos", func(r chi.Router) {
+			r.Get("/", reposHandler.List)
+			r.Post("/", reposHandler.Clone)
+			r.Get("/{id}", reposHandler.Get)
+			r.Post("/{id}/pull", reposHandler.Pull)
+			r.Delete("/{id}", reposHandler.Delete)
+			r.Get("/{id}/files", reposHandler.GetFiles)
+			r.Get("/{id}/compose", reposHandler.GetComposeFiles)
+			r.Get("/{id}/content", reposHandler.GetFileContent)
 		})
 
 		// Webhooks
@@ -120,6 +153,8 @@ func NewRouter(cfg RouterConfig) http.Handler {
 
 	// WebSocket routes
 	r.Get("/ws/containers/{id}/logs", logsHandler.StreamLogs)
+	r.Get("/ws/containers/{id}/stats", statsHandler.StreamStats)
+	r.Get("/ws/containers/{id}/shell", execHandler.Shell)
 	r.Get("/ws/events", handlers.StreamEvents)
 
 	// Static files (frontend)

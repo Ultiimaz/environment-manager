@@ -1,11 +1,35 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { HardDrive, Trash2, Plus, Download } from 'lucide-react'
+import { HardDrive, Trash2, Plus, Download, Search } from 'lucide-react'
+import { Card, CardContent } from '@/components/ui/card'
+import { Button } from '@/components/ui/button'
+import { Badge } from '@/components/ui/badge'
+import { Input } from '@/components/ui/input'
+import { Skeleton } from '@/components/ui/skeleton'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import { getVolumes, deleteVolume, backupVolume, createVolume } from '../services/api'
 import type { Volume } from '../types'
+import { formatBytes } from '@/lib/utils'
 
 export default function Volumes() {
-  const [showCreateModal, setShowCreateModal] = useState(false)
+  const [showCreateDialog, setShowCreateDialog] = useState(false)
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
+  const [volumeToDelete, setVolumeToDelete] = useState<Volume | null>(null)
+  const [searchQuery, setSearchQuery] = useState('')
   const queryClient = useQueryClient()
 
   const { data: volumes = [], isLoading } = useQuery({
@@ -15,111 +39,162 @@ export default function Volumes() {
 
   const deleteMutation = useMutation({
     mutationFn: deleteVolume,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['volumes'] }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['volumes'] })
+      setDeleteDialogOpen(false)
+      setVolumeToDelete(null)
+    },
   })
 
   const backupMutation = useMutation({
     mutationFn: backupVolume,
-    onSuccess: () => {
-      alert('Backup started')
-    },
   })
 
-  const handleDelete = (volume: Volume) => {
-    if (confirm(`Delete volume "${volume.name}"? This cannot be undone.`)) {
-      deleteMutation.mutate(volume.name)
+  const handleDeleteClick = (volume: Volume) => {
+    setVolumeToDelete(volume)
+    setDeleteDialogOpen(true)
+  }
+
+  const handleConfirmDelete = () => {
+    if (volumeToDelete) {
+      deleteMutation.mutate(volumeToDelete.name)
     }
   }
 
-  const formatBytes = (bytes?: number) => {
-    if (!bytes) return '-'
-    const sizes = ['B', 'KB', 'MB', 'GB', 'TB']
-    const i = Math.floor(Math.log(bytes) / Math.log(1024))
-    return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${sizes[i]}`
-  }
-
-  if (isLoading) {
-    return <div className="p-6 text-gray-400">Loading...</div>
-  }
+  const filteredVolumes = volumes.filter((volume) =>
+    volume.name.toLowerCase().includes(searchQuery.toLowerCase())
+  )
 
   return (
-    <div className="p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h1 className="text-2xl font-bold text-white">Volumes</h1>
-        <button
-          onClick={() => setShowCreateModal(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
-        >
-          <Plus size={20} />
+    <div className="space-y-6">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h1 className="text-2xl font-bold">Volumes</h1>
+          <p className="text-muted-foreground">{volumes.length} volumes</p>
+        </div>
+        <Button onClick={() => setShowCreateDialog(true)}>
+          <Plus className="h-4 w-4 mr-2" />
           Create Volume
-        </button>
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        {volumes.map(volume => (
-          <div key={volume.name} className="bg-gray-800 rounded-lg p-4">
-            <div className="flex items-start justify-between mb-3">
-              <div className="flex items-center gap-3">
-                <div className="p-2 bg-blue-500/10 rounded-lg text-blue-400">
-                  <HardDrive size={24} />
-                </div>
-                <div>
-                  <h3 className="text-white font-medium">{volume.name}</h3>
-                  <p className="text-sm text-gray-400">{volume.driver}</p>
-                </div>
-              </div>
-              {volume.is_managed && (
-                <span className="text-xs text-green-400">managed</span>
-              )}
-            </div>
-
-            <div className="space-y-2 text-sm mb-4">
-              <div className="flex justify-between">
-                <span className="text-gray-400">Size</span>
-                <span className="text-gray-300">{formatBytes(volume.size_bytes)}</span>
-              </div>
-              <div className="flex justify-between">
-                <span className="text-gray-400">Mountpoint</span>
-                <span className="text-gray-300 font-mono text-xs truncate max-w-[180px]" title={volume.mountpoint}>
-                  {volume.mountpoint}
-                </span>
-              </div>
-            </div>
-
-            <div className="flex items-center gap-2 pt-3 border-t border-gray-700">
-              <button
-                onClick={() => backupMutation.mutate(volume.name)}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-300 hover:text-white hover:bg-gray-700 rounded"
-              >
-                <Download size={14} />
-                Backup
-              </button>
-              <button
-                onClick={() => handleDelete(volume)}
-                className="flex items-center gap-1 px-3 py-1.5 text-sm text-gray-300 hover:text-red-400 hover:bg-gray-700 rounded"
-              >
-                <Trash2 size={14} />
-                Delete
-              </button>
-            </div>
-          </div>
-        ))}
-
-        {volumes.length === 0 && (
-          <div className="col-span-full text-center py-12 text-gray-500">
-            No volumes found. Create one to get started.
-          </div>
-        )}
+      <div className="relative max-w-sm">
+        <Search className="absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
+        <Input
+          placeholder="Search volumes..."
+          value={searchQuery}
+          onChange={(e) => setSearchQuery(e.target.value)}
+          className="pl-9"
+        />
       </div>
 
-      {showCreateModal && (
-        <CreateVolumeModal onClose={() => setShowCreateModal(false)} />
+      {isLoading ? (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {[...Array(6)].map((_, i) => (
+            <Skeleton key={i} className="h-48" />
+          ))}
+        </div>
+      ) : filteredVolumes.length === 0 ? (
+        <div className="text-center py-12 text-muted-foreground">
+          {searchQuery ? 'No volumes match your search' : 'No volumes found. Create one to get started.'}
+        </div>
+      ) : (
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+          {filteredVolumes.map((volume) => (
+            <Card key={volume.name}>
+              <CardContent className="pt-6">
+                <div className="flex items-start justify-between mb-4">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-info/10 rounded-lg text-info">
+                      <HardDrive className="h-6 w-6" />
+                    </div>
+                    <div>
+                      <h3 className="font-medium">{volume.name}</h3>
+                      <p className="text-sm text-muted-foreground">{volume.driver}</p>
+                    </div>
+                  </div>
+                  {volume.is_managed && (
+                    <Badge variant="outline">managed</Badge>
+                  )}
+                </div>
+
+                <div className="space-y-2 text-sm mb-4">
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Size</span>
+                    <span>{formatBytes(volume.size_bytes || 0)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-muted-foreground">Mountpoint</span>
+                    <span
+                      className="font-mono text-xs truncate max-w-[180px]"
+                      title={volume.mountpoint}
+                    >
+                      {volume.mountpoint}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 pt-4 border-t">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => backupMutation.mutate(volume.name)}
+                    disabled={backupMutation.isPending}
+                  >
+                    <Download className="h-4 w-4 mr-2" />
+                    Backup
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="text-destructive hover:text-destructive"
+                    onClick={() => handleDeleteClick(volume)}
+                  >
+                    <Trash2 className="h-4 w-4 mr-2" />
+                    Delete
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          ))}
+        </div>
       )}
+
+      <CreateVolumeDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
+
+      <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Delete Volume</DialogTitle>
+            <DialogDescription>
+              Are you sure you want to delete &quot;{volumeToDelete?.name}&quot;? This action cannot be undone and all data will be lost.
+            </DialogDescription>
+          </DialogHeader>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setDeleteDialogOpen(false)}>
+              Cancel
+            </Button>
+            <Button
+              variant="destructive"
+              onClick={handleConfirmDelete}
+              disabled={deleteMutation.isPending}
+            >
+              {deleteMutation.isPending ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </div>
   )
 }
 
-function CreateVolumeModal({ onClose }: { onClose: () => void }) {
+function CreateVolumeDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
   const [name, setName] = useState('')
   const [driver, setDriver] = useState('local')
   const queryClient = useQueryClient()
@@ -128,7 +203,8 @@ function CreateVolumeModal({ onClose }: { onClose: () => void }) {
     mutationFn: () => createVolume(name, driver),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['volumes'] })
-      onClose()
+      onOpenChange(false)
+      setName('')
     },
   })
 
@@ -140,54 +216,45 @@ function CreateVolumeModal({ onClose }: { onClose: () => void }) {
   }
 
   return (
-    <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
-      <div className="bg-gray-800 rounded-lg p-6 w-full max-w-md">
-        <h2 className="text-xl font-bold text-white mb-4">Create Volume</h2>
-
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Create Volume</DialogTitle>
+          <DialogDescription>Create a new Docker volume for persistent storage.</DialogDescription>
+        </DialogHeader>
         <form onSubmit={handleSubmit}>
-          <div className="space-y-4">
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Name</label>
-              <input
-                type="text"
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Name</label>
+              <Input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
                 placeholder="my-volume"
                 required
               />
             </div>
-
-            <div>
-              <label className="block text-sm text-gray-400 mb-1">Driver</label>
-              <select
-                value={driver}
-                onChange={(e) => setDriver(e.target.value)}
-                className="w-full px-3 py-2 bg-gray-700 border border-gray-600 rounded-lg text-white focus:outline-none focus:border-blue-500"
-              >
-                <option value="local">local</option>
-              </select>
+            <div className="space-y-2">
+              <label className="text-sm font-medium">Driver</label>
+              <Select value={driver} onValueChange={setDriver}>
+                <SelectTrigger>
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="local">local</SelectItem>
+                </SelectContent>
+              </Select>
             </div>
           </div>
-
-          <div className="flex justify-end gap-3 mt-6">
-            <button
-              type="button"
-              onClick={onClose}
-              className="px-4 py-2 text-gray-300 hover:text-white"
-            >
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
               Cancel
-            </button>
-            <button
-              type="submit"
-              disabled={createMutation.isPending}
-              className="px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-50"
-            >
+            </Button>
+            <Button type="submit" disabled={createMutation.isPending}>
               {createMutation.isPending ? 'Creating...' : 'Create'}
-            </button>
-          </div>
+            </Button>
+          </DialogFooter>
         </form>
-      </div>
-    </div>
+      </DialogContent>
+    </Dialog>
   )
 }
