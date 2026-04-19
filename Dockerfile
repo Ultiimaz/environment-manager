@@ -19,8 +19,13 @@ RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o /server ./cmd/server
 # Final image
 FROM alpine:3.19
 
-# Install git and git-lfs for backup operations
-RUN apk add --no-cache git git-lfs ca-certificates tzdata
+# Install git, git-lfs, and the docker CLI (with compose v2 plugin) so the
+# compose handler can shell out to `docker-compose` when rebuilding linked
+# projects. DOCKER_HOST points at the mounted socket.
+RUN apk add --no-cache git git-lfs ca-certificates tzdata docker-cli docker-cli-compose
+# Provide the legacy `docker-compose` command name used by the code paths.
+RUN printf '#!/bin/sh\nexec docker compose "$@"\n' > /usr/local/bin/docker-compose \
+ && chmod +x /usr/local/bin/docker-compose
 
 WORKDIR /app
 

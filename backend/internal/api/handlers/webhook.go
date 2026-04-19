@@ -15,6 +15,7 @@ import (
 type WebhookHandler struct {
 	gitRepo        *git.Repository
 	stateManager   *state.Manager
+	composeHandler *ComposeHandler // for rebuilding linked projects on push
 	syncController *sync.Controller // Optional: if set, use controller for sync
 	logger         *zap.Logger
 }
@@ -26,6 +27,12 @@ func NewWebhookHandler(gitRepo *git.Repository, stateManager *state.Manager, log
 		stateManager: stateManager,
 		logger:       logger,
 	}
+}
+
+// SetComposeHandler wires the compose handler so push events can rebuild
+// any projects bound to the pushed repo.
+func (h *WebhookHandler) SetComposeHandler(c *ComposeHandler) {
+	h.composeHandler = c
 }
 
 // SetSyncController sets the sync controller for the webhook handler
@@ -52,6 +59,13 @@ func (h *WebhookHandler) GitHub(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Rebuild any compose projects bound to this repo before running other
+	// sync work — these are fire-and-forget user-facing deploys.
+	var rebuildResults []string
+	if h.composeHandler != nil && payload.Repository.CloneURL != "" {
+		rebuildResults = h.composeHandler.RebuildLinkedProjectsForRepo(payload.Repository.CloneURL)
+	}
+
 	// Use sync controller if available
 	if h.syncController != nil {
 		result, err := h.syncController.TriggerSync("webhook-github")
@@ -60,7 +74,10 @@ func (h *WebhookHandler) GitHub(w http.ResponseWriter, r *http.Request) {
 			respondError(w, http.StatusInternalServerError, "SYNC_FAILED", err.Error())
 			return
 		}
-		respondSuccess(w, result)
+		respondSuccess(w, map[string]interface{}{
+			"sync":             result,
+			"rebuilt_projects": rebuildResults,
+		})
 		return
 	}
 

@@ -58,11 +58,12 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	// Create handlers
 	containerHandler := handlers.NewContainerHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.StateManager, cfg.GitRepo, cfg.BaseDomain, cfg.Logger)
 	volumeHandler := handlers.NewVolumeHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.BackupScheduler, cfg.GitRepo, cfg.Logger)
-	composeHandler := handlers.NewComposeHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.StateManager, cfg.ProxyManager, cfg.GitRepo, cfg.BaseDomain, cfg.DataDir, cfg.Logger)
+	composeHandler := handlers.NewComposeHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.StateManager, cfg.ProxyManager, cfg.ReposManager, cfg.GitRepo, cfg.BaseDomain, cfg.DataDir, cfg.Logger)
 	networkHandler := handlers.NewNetworkHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.ProxyManager, cfg.GitRepo, cfg.Logger)
 	gitHandler := handlers.NewGitHandler(cfg.GitRepo, cfg.StateManager, cfg.Logger)
 	logsHandler := handlers.NewLogsHandler(cfg.DockerClient)
 	webhookHandler := handlers.NewWebhookHandler(cfg.GitRepo, cfg.StateManager, cfg.Logger)
+	webhookHandler.SetComposeHandler(composeHandler)
 	statsHandler := handlers.NewStatsHandler(cfg.DockerClient, cfg.StatsStore, cfg.StatsCollector)
 	execHandler := handlers.NewExecHandler(cfg.DockerClient, cfg.Logger)
 	reposHandler := handlers.NewReposHandler(cfg.ReposManager)
@@ -114,6 +115,8 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Post("/{project}/up", composeHandler.Up)
 			r.Post("/{project}/down", composeHandler.Down)
 			r.Post("/{project}/restart", composeHandler.Restart)
+			r.Post("/{project}/link", composeHandler.LinkRepo)
+			r.Delete("/{project}/link", composeHandler.UnlinkRepo)
 		})
 
 		// Network

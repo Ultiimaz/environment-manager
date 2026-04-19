@@ -1,12 +1,20 @@
 import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Layers, Play, Square, Trash2, Plus, Search, FileCode } from 'lucide-react'
+import { Layers, Play, Square, Trash2, Plus, Search, FileCode, GitBranch, Link as LinkIcon, Unlink, GitCommit } from 'lucide-react'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Separator } from '@/components/ui/separator'
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
 import {
   Dialog,
   DialogContent,
@@ -21,13 +29,17 @@ import {
   composeDown,
   deleteComposeProject,
   createComposeProject,
+  getRepositories,
+  linkComposeRepo,
+  unlinkComposeRepo,
 } from '../services/api'
-import type { ComposeProject } from '../types'
+import type { ComposeProject, Repository } from '../types'
 
 export default function Compose() {
   const [showCreateDialog, setShowCreateDialog] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [projectToDelete, setProjectToDelete] = useState<ComposeProject | null>(null)
+  const [linkDialogFor, setLinkDialogFor] = useState<ComposeProject | null>(null)
   const [searchQuery, setSearchQuery] = useState('')
   const queryClient = useQueryClient()
 
@@ -54,6 +66,17 @@ export default function Compose() {
       setDeleteDialogOpen(false)
       setProjectToDelete(null)
     },
+  })
+
+  // Repo list is used by the link dialog to map projects -> cloned repos.
+  const { data: repositories = [] } = useQuery({
+    queryKey: ['repositories'],
+    queryFn: getRepositories,
+  })
+
+  const unlinkMutation = useMutation({
+    mutationFn: unlinkComposeRepo,
+    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['composeProjects'] }),
   })
 
   const handleDeleteClick = (project: ComposeProject) => {
@@ -149,6 +172,16 @@ export default function Compose() {
 
                 <Separator className="my-4" />
 
+                <LinkedRepoRow
+                  project={project}
+                  repositories={repositories}
+                  onLink={() => setLinkDialogFor(project)}
+                  onUnlink={() => unlinkMutation.mutate(project.project_name)}
+                  isUnlinking={unlinkMutation.isPending && unlinkMutation.variables === project.project_name}
+                />
+
+                <Separator className="my-4" />
+
                 <div className="flex items-center gap-2">
                   {project.desired_state === 'running' ? (
                     <Button
@@ -188,6 +221,16 @@ export default function Compose() {
       )}
 
       <CreateComposeDialog open={showCreateDialog} onOpenChange={setShowCreateDialog} />
+
+      <LinkRepoDialog
+        project={linkDialogFor}
+        repositories={repositories}
+        onClose={() => setLinkDialogFor(null)}
+        onSuccess={() => {
+          setLinkDialogFor(null)
+          queryClient.invalidateQueries({ queryKey: ['composeProjects'] })
+        }}
+      />
 
       <Dialog open={deleteDialogOpen} onOpenChange={setDeleteDialogOpen}>
         <DialogContent>
@@ -301,3 +344,165 @@ services:
     </Dialog>
   )
 }
+
+
+function LinkedRepoRow({
+  project,
+  repositories,
+  onLink,
+  onUnlink,
+  isUnlinking,
+}: {
+  project: ComposeProject
+  repositories: Repository[]
+  onLink: () => void
+  onUnlink: () => void
+  isUnlinking: boolean
+}) {
+  const linked = project.repo_id
+    ? repositories.find((r) => r.id === project.repo_id)
+    : undefined
+
+  if (!linked) {
+    return (
+      <div className="flex items-center justify-between text-sm text-muted-foreground">
+        <span className="flex items-center gap-2">
+          <GitBranch className="h-3.5 w-3.5" />
+          No repo linked
+        </span>
+        <Button variant="outline" size="sm" onClick={onLink}>
+          <LinkIcon className="h-3.5 w-3.5 mr-1" />
+          Link repo
+        </Button>
+      </div>
+    )
+  }
+
+  return (
+    <div className="space-y-1">
+      <div className="flex items-center justify-between text-sm">
+        <span className="flex items-center gap-2 min-w-0">
+          <GitBranch className="h-3.5 w-3.5 flex-shrink-0" />
+          <span className="font-medium truncate">{linked.name}</span>
+          {linked.commit_sha && (
+            <Badge variant="secondary" className="font-mono text-[10px]">
+              <GitCommit className="h-3 w-3 mr-1" />
+              {linked.commit_sha}
+            </Badge>
+          )}
+        </span>
+        <Button variant="ghost" size="sm" onClick={onUnlink} disabled={isUnlinking}>
+          <Unlink className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+      {project.repo_compose_path && (
+        <p className="text-xs text-muted-foreground font-mono pl-5">{project.repo_compose_path}</p>
+      )}
+    </div>
+  )
+}
+
+function LinkRepoDialog({
+  project,
+  repositories,
+  onClose,
+  onSuccess,
+}: {
+  project: ComposeProject | null
+  repositories: Repository[]
+  onClose: () => void
+  onSuccess: () => void
+}) {
+  const [repoID, setRepoID] = useState("")
+  const [composePath, setComposePath] = useState("")
+
+  const selectedRepo = repositories.find((r) => r.id === repoID)
+
+  // Default compose path to the first compose file detected in the selected
+  // repo, if any. Users can override.
+  const defaultPath =
+    selectedRepo?.compose_files && selectedRepo.compose_files.length > 0
+      ? selectedRepo.compose_files[0]
+      : "docker-compose.yaml"
+
+  const mutation = useMutation({
+    mutationFn: () =>
+      linkComposeRepo(project!.project_name, repoID, composePath || defaultPath),
+    onSuccess: () => {
+      setRepoID("")
+      setComposePath("")
+      onSuccess()
+    },
+  })
+
+  return (
+    <Dialog
+      open={!!project}
+      onOpenChange={(o) => {
+        if (!o) {
+          setRepoID("")
+          setComposePath("")
+          onClose()
+        }
+      }}
+    >
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Link repo to {project?.project_name}</DialogTitle>
+          <DialogDescription>
+            Pushing to the selected repo rebuilds this stack automatically.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="space-y-4 py-2">
+          <div className="space-y-2">
+            <Label>Repository</Label>
+            <Select value={repoID} onValueChange={setRepoID}>
+              <SelectTrigger>
+                <SelectValue placeholder="Pick a cloned repo" />
+              </SelectTrigger>
+              <SelectContent>
+                {repositories.map((r) => (
+                  <SelectItem key={r.id} value={r.id}>
+                    {r.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          {selectedRepo && (
+            <div className="space-y-2">
+              <Label>Compose file path in repo</Label>
+              <Input
+                value={composePath}
+                onChange={(e) => setComposePath(e.target.value)}
+                placeholder={defaultPath}
+              />
+              {selectedRepo.compose_files && selectedRepo.compose_files.length > 0 && (
+                <p className="text-xs text-muted-foreground">
+                  Detected: {selectedRepo.compose_files.join(", ")}
+                </p>
+              )}
+            </div>
+          )}
+          {mutation.isError && (
+            <p className="text-sm text-destructive">
+              {(mutation.error as Error)?.message || "Failed to link"}
+            </p>
+          )}
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose}>
+            Cancel
+          </Button>
+          <Button
+            onClick={() => mutation.mutate()}
+            disabled={!repoID || mutation.isPending}
+          >
+            {mutation.isPending ? "Linking..." : "Link"}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+

@@ -163,6 +163,22 @@ export async function composeDown(name: string): Promise<void> {
   await fetchApi(`/compose/${name}/down`, { method: 'POST' });
 }
 
+// Link a compose project to a cloned repo so pushes rebuild it automatically.
+export async function linkComposeRepo(
+  projectName: string,
+  repoID: string,
+  composePath?: string
+): Promise<ComposeProject> {
+  return fetchApi(`/compose/${projectName}/link`, {
+    method: 'POST',
+    body: JSON.stringify({ repo_id: repoID, compose_path: composePath }),
+  });
+}
+
+export async function unlinkComposeRepo(projectName: string): Promise<ComposeProject> {
+  return fetchApi(`/compose/${projectName}/link`, { method: 'DELETE' });
+}
+
 // Network
 export async function getNetworkConfig(): Promise<NetworkConfig> {
   return fetchApi<NetworkConfig>('/network');

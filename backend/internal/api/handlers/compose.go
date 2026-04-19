@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -16,6 +17,7 @@ import (
 	"github.com/environment-manager/backend/internal/git"
 	"github.com/environment-manager/backend/internal/models"
 	"github.com/environment-manager/backend/internal/proxy"
+	"github.com/environment-manager/backend/internal/repos"
 	"github.com/environment-manager/backend/internal/state"
 	"go.uber.org/zap"
 )
@@ -26,6 +28,7 @@ type ComposeHandler struct {
 	configLoader *config.Loader
 	stateManager *state.Manager
 	proxyManager *proxy.Manager
+	reposManager *repos.Manager
 	gitRepo      *git.Repository
 	baseDomain   string
 	dataDir      string
@@ -33,12 +36,13 @@ type ComposeHandler struct {
 }
 
 // NewComposeHandler creates a new compose handler
-func NewComposeHandler(dockerClient *docker.Client, configLoader *config.Loader, stateManager *state.Manager, proxyManager *proxy.Manager, gitRepo *git.Repository, baseDomain string, dataDir string, logger *zap.Logger) *ComposeHandler {
+func NewComposeHandler(dockerClient *docker.Client, configLoader *config.Loader, stateManager *state.Manager, proxyManager *proxy.Manager, reposManager *repos.Manager, gitRepo *git.Repository, baseDomain string, dataDir string, logger *zap.Logger) *ComposeHandler {
 	return &ComposeHandler{
 		dockerClient: dockerClient,
 		configLoader: configLoader,
 		stateManager: stateManager,
 		proxyManager: proxyManager,
+		reposManager: reposManager,
 		gitRepo:      gitRepo,
 		baseDomain:   baseDomain,
 		dataDir:      dataDir,
@@ -349,4 +353,169 @@ func (h *ComposeHandler) Restart(w http.ResponseWriter, r *http.Request) {
 	h.logger.Info("Compose restart requested", zap.String("project", projectName))
 
 	respondSuccess(w, map[string]string{"status": "restarting"})
+}
+
+// LinkRepo binds a compose project to a cloned repository so future pushes
+// rebuild it. Verifies the repo exists and that the chosen compose file is
+// present inside the clone before persisting the link.
+func (h *ComposeHandler) LinkRepo(w http.ResponseWriter, r *http.Request) {
+	if h.reposManager == nil {
+		respondError(w, http.StatusServiceUnavailable, "NO_REPOS", "repos manager unavailable")
+		return
+	}
+	projectName := chi.URLParam(r, "project")
+
+	var req models.LinkRepoRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respondError(w, http.StatusBadRequest, "INVALID_REQUEST", err.Error())
+		return
+	}
+	if req.RepoID == "" {
+		respondError(w, http.StatusBadRequest, "REPO_REQUIRED", "repo_id is required")
+		return
+	}
+	composePath := req.ComposePath
+	if composePath == "" {
+		composePath = "docker-compose.yaml"
+	}
+
+	repo, err := h.reposManager.Get(req.RepoID)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "REPO_NOT_FOUND", err.Error())
+		return
+	}
+	// Sanity check — compose file actually exists in the clone.
+	if _, err := os.Stat(filepath.Join(repo.LocalPath, composePath)); err != nil {
+		respondError(w, http.StatusBadRequest, "COMPOSE_FILE_MISSING",
+			"compose file "+composePath+" not found in repository")
+		return
+	}
+
+	project, err := h.configLoader.LoadComposeProject(projectName)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "PROJECT_NOT_FOUND", err.Error())
+		return
+	}
+	project.RepoID = req.RepoID
+	project.RepoComposePath = composePath
+	project.Metadata.UpdatedAt = time.Now()
+
+	if err := h.configLoader.SaveComposeProject(project); err != nil {
+		respondError(w, http.StatusInternalServerError, "SAVE_FAILED", err.Error())
+		return
+	}
+	h.gitRepo.CommitAndPush("Link compose project " + projectName + " to repo " + repo.Name)
+	respondSuccess(w, project)
+}
+
+// UnlinkRepo clears the repo binding without touching the running containers.
+func (h *ComposeHandler) UnlinkRepo(w http.ResponseWriter, r *http.Request) {
+	projectName := chi.URLParam(r, "project")
+	project, err := h.configLoader.LoadComposeProject(projectName)
+	if err != nil {
+		respondError(w, http.StatusNotFound, "PROJECT_NOT_FOUND", err.Error())
+		return
+	}
+	project.RepoID = ""
+	project.RepoComposePath = ""
+	project.Metadata.UpdatedAt = time.Now()
+	if err := h.configLoader.SaveComposeProject(project); err != nil {
+		respondError(w, http.StatusInternalServerError, "SAVE_FAILED", err.Error())
+		return
+	}
+	h.gitRepo.CommitAndPush("Unlink compose project " + projectName)
+	respondSuccess(w, project)
+}
+
+// RebuildLinkedProjectsForRepo is called by the webhook handler after a push.
+// For every project linked to the given repo URL it pulls the repo, copies
+// the latest compose file into the project dir, and runs up -d --build.
+// Returns a summary per project for logging / response.
+func (h *ComposeHandler) RebuildLinkedProjectsForRepo(repoURL string) []string {
+	var results []string
+	if h.reposManager == nil {
+		return results
+	}
+
+	// Find matching cloned repo. URL comparison tolerates trailing ".git".
+	allRepos, err := h.reposManager.List()
+	if err != nil {
+		h.logger.Error("list repos failed", zap.Error(err))
+		return results
+	}
+	var match *models.Repository
+	normURL := normalizeRepoURL(repoURL)
+	for _, r := range allRepos {
+		if normalizeRepoURL(r.URL) == normURL {
+			match = r
+			break
+		}
+	}
+	if match == nil {
+		h.logger.Info("no cloned repo matches push", zap.String("url", repoURL))
+		return results
+	}
+
+	// Pull the latest code (credentials handled inside Pull via global PAT).
+	if _, err := h.reposManager.Pull(match.ID); err != nil {
+		h.logger.Error("repo pull failed", zap.String("repo", match.Name), zap.Error(err))
+		results = append(results, match.Name+": pull failed: "+err.Error())
+		return results
+	}
+
+	// Find every compose project bound to this repo.
+	projects, err := h.configLoader.ListComposeProjects()
+	if err != nil {
+		h.logger.Error("list compose projects failed", zap.Error(err))
+		return results
+	}
+	for _, p := range projects {
+		if p.RepoID != match.ID {
+			continue
+		}
+		if err := h.rebuildOne(p, match); err != nil {
+			h.logger.Error("rebuild failed",
+				zap.String("project", p.ProjectName),
+				zap.Error(err))
+			results = append(results, p.ProjectName+": "+err.Error())
+			continue
+		}
+		results = append(results, p.ProjectName+": rebuilt")
+	}
+	return results
+}
+
+// rebuildOne copies the repo's compose file into the project dir then runs
+// docker-compose up -d --build. Keeps rebuilds isolated per project.
+func (h *ComposeHandler) rebuildOne(project *models.ComposeProject, repo *models.Repository) error {
+	composePath := project.RepoComposePath
+	if composePath == "" {
+		composePath = "docker-compose.yaml"
+	}
+	src := filepath.Join(repo.LocalPath, composePath)
+	content, err := os.ReadFile(src)
+	if err != nil {
+		return err
+	}
+	if err := h.configLoader.SaveComposeFile(project.ProjectName, string(content)); err != nil {
+		return err
+	}
+	output, err := h.runDockerCompose(project.ProjectName, "up", "-d", "--build")
+	if err != nil {
+		return err
+	}
+	h.logger.Info("project rebuilt from repo",
+		zap.String("project", project.ProjectName),
+		zap.String("repo", repo.Name),
+		zap.String("output", output))
+	h.stateManager.UpdateComposeState(project.ProjectName, "running")
+	return nil
+}
+
+// normalizeRepoURL strips ".git" and lowercases so URL comparisons tolerate
+// the variants GitHub and git clients use interchangeably.
+func normalizeRepoURL(u string) string {
+	u = strings.TrimSuffix(u, ".git")
+	u = strings.TrimSuffix(u, "/")
+	return strings.ToLower(u)
 }

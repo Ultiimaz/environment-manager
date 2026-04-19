@@ -11,6 +11,18 @@ type ComposeProject struct {
 	DesiredState  string          `yaml:"desired_state" json:"desired_state"` // running | stopped
 	Containers    []ComposeContainer `yaml:"containers,omitempty" json:"containers,omitempty"`
 	Metadata      ComposeMetadata `yaml:"metadata" json:"metadata"`
+	// RepoID links this project to a cloned Git repository so webhook pushes
+	// to that repo auto-rebuild this stack. Empty when unlinked.
+	RepoID string `yaml:"repo_id,omitempty" json:"repo_id,omitempty"`
+	// RepoComposePath is the compose file path relative to the repo root
+	// (e.g. "docker-compose.yaml"). Used to copy the latest version on pull.
+	RepoComposePath string `yaml:"repo_compose_path,omitempty" json:"repo_compose_path,omitempty"`
+}
+
+// LinkRepoRequest asks env-manager to bind a compose project to a cloned repo.
+type LinkRepoRequest struct {
+	RepoID      string `json:"repo_id"`
+	ComposePath string `json:"compose_path,omitempty"` // defaults to docker-compose.yaml
 }
 
 // ComposeContainer represents a container created by a compose project

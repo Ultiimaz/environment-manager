@@ -63,6 +63,8 @@ export interface ComposeProject {
   desired_state: string;
   services?: ComposeServiceStatus[];
   is_managed: boolean;
+  repo_id?: string;
+  repo_compose_path?: string;
 }
 
 export interface ComposeServiceStatus {
