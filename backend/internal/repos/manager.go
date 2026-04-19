@@ -39,6 +39,51 @@ func NewManager(basePath string, creds *credentials.Store) (*Manager, error) {
 	}, nil
 }
 
+// Credentials exposes the underlying credential store so integration handlers
+// (e.g. the GitHub PAT flow) can read and write provider-wide tokens without
+// a second initialization path.
+func (m *Manager) Credentials() *credentials.Store {
+	return m.credentials
+}
+
+// headSHA reads the current HEAD commit SHA of a local clone. Returns the
+// short form (first 7 chars) for display.
+func headSHA(localPath string) string {
+	repo, err := git.PlainOpen(localPath)
+	if err != nil {
+		return ""
+	}
+	head, err := repo.Head()
+	if err != nil {
+		return ""
+	}
+	full := head.Hash().String()
+	if len(full) < 7 {
+		return full
+	}
+	return full[:7]
+}
+
+// resolveToken picks the best auth token for a repo URL: a per-URL token if
+// saved at clone time, otherwise the provider-wide PAT for known hosts.
+func (m *Manager) resolveToken(repoURL, explicit string) string {
+	if explicit != "" {
+		return explicit
+	}
+	if m.credentials == nil {
+		return ""
+	}
+	if tok, err := m.credentials.GetToken(repoURL); err == nil && tok != "" {
+		return tok
+	}
+	if strings.Contains(repoURL, "github.com") {
+		if tok, err := m.credentials.GetGlobalToken("github"); err == nil && tok != "" {
+			return tok
+		}
+	}
+	return ""
+}
+
 // Clone clones a repository
 func (m *Manager) Clone(ctx context.Context, req models.CloneRequest) (*models.Repository, error) {
 	m.mu.Lock()
@@ -66,11 +111,13 @@ func (m *Manager) Clone(ctx context.Context, req models.CloneRequest) (*models.R
 		cloneOpts.SingleBranch = true
 	}
 
-	// Set auth if token provided
-	if req.Token != "" {
+	// Set auth: per-request token takes precedence, otherwise fall back to
+	// a previously saved per-URL token or the provider-wide GitHub PAT.
+	authToken := m.resolveToken(req.URL, req.Token)
+	if authToken != "" {
 		cloneOpts.Auth = &http.BasicAuth{
 			Username: "git", // Can be anything for token auth
-			Password: req.Token,
+			Password: authToken,
 		}
 	}
 
@@ -103,8 +150,9 @@ func (m *Manager) Clone(ctx context.Context, req models.CloneRequest) (*models.R
 		Name:         name,
 		URL:          req.URL,
 		Branch:       branch,
+		CommitSHA:    headSHA(localPath),
 		LocalPath:    localPath,
-		HasToken:     req.Token != "",
+		HasToken:     authToken != "",
 		ClonedAt:     now,
 		LastPulled:   now,
 		ComposeFiles: composeFiles,
@@ -150,10 +198,17 @@ func (m *Manager) List() ([]*models.Repository, error) {
 			repo = m.reconstructMetadata(repoPath, entry.Name())
 		}
 
-		// Update HasToken from credential store
+		// Update HasToken from credential store. Also consider the global
+		// GitHub PAT so existing clones from github.com show as authed.
 		if m.credentials != nil {
 			repo.HasToken = m.credentials.HasToken(repo.URL)
+			if !repo.HasToken && strings.Contains(repo.URL, "github.com") {
+				repo.HasToken = m.credentials.HasGlobalToken("github")
+			}
 		}
+
+		// Freshen commit SHA on every list so the UI shows current HEAD.
+		repo.CommitSHA = headSHA(repoPath)
 
 		repos = append(repos, repo)
 	}
@@ -219,14 +274,12 @@ func (m *Manager) Pull(id string) (*models.Repository, error) {
 		RemoteName: "origin",
 	}
 
-	// Get auth if available
-	if m.credentials != nil {
-		token, err := m.credentials.GetToken(repo.URL)
-		if err == nil && token != "" {
-			pullOpts.Auth = &http.BasicAuth{
-				Username: "git",
-				Password: token,
-			}
+	// Get auth: per-URL token if saved at clone time, otherwise fall back
+	// to the provider-wide GitHub PAT.
+	if token := m.resolveToken(repo.URL, ""); token != "" {
+		pullOpts.Auth = &http.BasicAuth{
+			Username: "git",
+			Password: token,
 		}
 	}
 
@@ -238,6 +291,7 @@ func (m *Manager) Pull(id string) (*models.Repository, error) {
 
 	// Update metadata
 	repo.LastPulled = time.Now()
+	repo.CommitSHA = headSHA(repo.LocalPath)
 	repo.ComposeFiles = m.DetectComposeFiles(repo.LocalPath)
 
 	if err := m.saveMetadata(repo); err != nil {

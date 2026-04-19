@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { GitBranch, Plus, RefreshCw, Trash2, FileCode, Clock, Lock, Unlock, Rocket } from 'lucide-react'
+import { GitBranch, Plus, RefreshCw, Trash2, FileCode, Clock, Lock, Unlock, Rocket, Github, LogOut, Check, GitCommit } from 'lucide-react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -41,11 +41,17 @@ import {
   createComposeProject,
   composeUp,
   checkSubdomainAvailability,
+  getGitHubStatus,
+  setGitHubToken,
+  disconnectGitHub,
+  listGitHubRepos,
 } from '../services/api'
-import type { Repository, CloneRequest, ServiceSubdomain } from '../types'
+import type { Repository, CloneRequest, ServiceSubdomain, GitHubRepo } from '../types'
 
 export default function Repositories() {
   const [cloneDialogOpen, setCloneDialogOpen] = useState(false)
+  const [pickerDialogOpen, setPickerDialogOpen] = useState(false)
+  const [connectDialogOpen, setConnectDialogOpen] = useState(false)
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [setupDialogOpen, setSetupDialogOpen] = useState(false)
   const [repoToDelete, setRepoToDelete] = useState<Repository | null>(null)
@@ -57,6 +63,20 @@ export default function Repositories() {
     queryFn: getRepositories,
   })
   const repositories = repositoriesData ?? []
+
+  // Check whether a GitHub PAT is stored so we can offer the repo picker.
+  const { data: ghStatus } = useQuery({
+    queryKey: ['github-status'],
+    queryFn: getGitHubStatus,
+  })
+  const ghConnected = !!ghStatus?.connected
+
+  const disconnectMutation = useMutation({
+    mutationFn: disconnectGitHub,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['github-status'] })
+    },
+  })
 
   const pullMutation = useMutation({
     mutationFn: pullRepository,
@@ -110,10 +130,38 @@ export default function Repositories() {
             {repositories.length} {repositories.length === 1 ? 'repository' : 'repositories'} cloned
           </p>
         </div>
-        <Button onClick={() => setCloneDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Clone Repository
-        </Button>
+        <div className="flex flex-wrap items-center gap-2">
+          {ghConnected ? (
+            <div className="flex items-center gap-2 rounded-md border px-3 py-1.5 text-sm">
+              <Github className="h-4 w-4" />
+              <span className="text-muted-foreground">{ghStatus?.login}</span>
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1"
+                onClick={() => disconnectMutation.mutate()}
+                title="Disconnect GitHub"
+              >
+                <LogOut className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          ) : (
+            <Button variant="outline" onClick={() => setConnectDialogOpen(true)}>
+              <Github className="h-4 w-4 mr-2" />
+              Connect GitHub
+            </Button>
+          )}
+          {ghConnected && (
+            <Button onClick={() => setPickerDialogOpen(true)}>
+              <Plus className="h-4 w-4 mr-2" />
+              From GitHub
+            </Button>
+          )}
+          <Button variant={ghConnected ? 'outline' : 'default'} onClick={() => setCloneDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            By URL
+          </Button>
+        </div>
       </div>
 
       {isLoading ? (
@@ -162,6 +210,17 @@ export default function Repositories() {
       <CloneDialog
         open={cloneDialogOpen}
         onOpenChange={setCloneDialogOpen}
+        onSuccess={handleCloneSuccess}
+      />
+
+      <ConnectGitHubDialog
+        open={connectDialogOpen}
+        onOpenChange={setConnectDialogOpen}
+      />
+
+      <GitHubPickerDialog
+        open={pickerDialogOpen}
+        onOpenChange={setPickerDialogOpen}
         onSuccess={handleCloneSuccess}
       />
 
@@ -240,8 +299,18 @@ function RepositoryCard({
         </div>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+        <div className="flex flex-wrap items-center gap-2 text-sm text-muted-foreground">
           <Badge variant="outline">{repo.branch}</Badge>
+          {repo.commit_sha && (
+            <Badge
+              variant="secondary"
+              className="font-mono text-[10px]"
+              title={`HEAD commit ${repo.commit_sha}`}
+            >
+              <GitCommit className="h-3 w-3 mr-1" />
+              {repo.commit_sha}
+            </Badge>
+          )}
           <span className="flex items-center gap-1">
             <Clock className="h-3 w-3" />
             Pulled {formatDate(repo.last_pulled)}
@@ -773,4 +842,192 @@ function parseServices(content: string): Array<{ service: string; port: number }
   }
 
   return services
+}
+
+// ConnectGitHubDialog: paste a PAT once. Backend probes GET /user to validate
+// before storing, so a bad token fails here rather than silently on next clone.
+function ConnectGitHubDialog({
+  open,
+  onOpenChange,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+}) {
+  const [token, setToken] = useState('')
+  const queryClient = useQueryClient()
+
+  const connectMutation = useMutation({
+    mutationFn: (t: string) => setGitHubToken(t),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['github-status'] })
+      onOpenChange(false)
+      setToken('')
+    },
+  })
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    if (token) connectMutation.mutate(token)
+  }
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-lg">
+        <DialogHeader>
+          <DialogTitle>Connect GitHub</DialogTitle>
+          <DialogDescription>
+            Paste a Personal Access Token once. We'll reuse it for every GitHub clone and pull so you don't have to enter it again.
+          </DialogDescription>
+        </DialogHeader>
+        <form onSubmit={handleSubmit}>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="gh-token">Personal Access Token</Label>
+              <Input
+                id="gh-token"
+                type="password"
+                value={token}
+                onChange={(e) => setToken(e.target.value)}
+                placeholder="ghp_xxxxxxxxxxxx or github_pat_xxxxx"
+                required
+              />
+              <p className="text-xs text-muted-foreground">
+                Create one at <span className="font-mono">github.com/settings/tokens</span> with the{' '}
+                <span className="font-mono">repo</span> scope. Token is encrypted at rest.
+              </p>
+            </div>
+          </div>
+          {connectMutation.isError && (
+            <p className="text-sm text-destructive mb-4">
+              {(connectMutation.error as Error)?.message || 'Failed to connect'}
+            </p>
+          )}
+          <DialogFooter>
+            <Button type="button" variant="outline" onClick={() => onOpenChange(false)}>
+              Cancel
+            </Button>
+            <Button type="submit" disabled={connectMutation.isPending || !token}>
+              {connectMutation.isPending ? 'Checking...' : 'Connect'}
+            </Button>
+          </DialogFooter>
+        </form>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
+// GitHubPickerDialog: list repos the PAT can see, let the user pick one, and
+// clone it using the stored token (no per-repo token paste needed).
+function GitHubPickerDialog({
+  open,
+  onOpenChange,
+  onSuccess,
+}: {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSuccess: (repo: Repository) => void
+}) {
+  const [filter, setFilter] = useState('')
+  const [cloningId, setCloningId] = useState<number | null>(null)
+  const queryClient = useQueryClient()
+
+  const { data: repos, isLoading, error } = useQuery({
+    queryKey: ['github-repos'],
+    queryFn: listGitHubRepos,
+    enabled: open,
+    staleTime: 60_000,
+  })
+
+  const cloneMutation = useMutation({
+    mutationFn: (r: GitHubRepo) => cloneRepository({ url: r.clone_url, branch: r.default_branch }),
+    onSuccess: (repo) => {
+      queryClient.invalidateQueries({ queryKey: ['repositories'] })
+      onOpenChange(false)
+      onSuccess(repo)
+    },
+    onSettled: () => setCloningId(null),
+  })
+
+  const filtered = (repos ?? []).filter((r) =>
+    r.full_name.toLowerCase().includes(filter.toLowerCase())
+  )
+
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-2xl max-h-[80vh] overflow-hidden flex flex-col">
+        <DialogHeader>
+          <DialogTitle>Clone from GitHub</DialogTitle>
+          <DialogDescription>
+            Pick one of your repositories. We'll clone it using your stored token.
+          </DialogDescription>
+        </DialogHeader>
+
+        <div className="py-2">
+          <Input
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter by name..."
+            autoFocus
+          />
+        </div>
+
+        <div className="flex-1 overflow-y-auto space-y-2">
+          {isLoading ? (
+            Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full" />
+            ))
+          ) : error ? (
+            <p className="text-sm text-destructive">
+              {(error as Error).message || 'Failed to load repositories'}
+            </p>
+          ) : filtered.length === 0 ? (
+            <p className="text-sm text-muted-foreground text-center py-6">
+              {filter ? 'No repos match your filter.' : 'No repositories visible to this token.'}
+            </p>
+          ) : (
+            filtered.map((r) => (
+              <button
+                key={r.id}
+                type="button"
+                onClick={() => {
+                  setCloningId(r.id)
+                  cloneMutation.mutate(r)
+                }}
+                disabled={cloneMutation.isPending}
+                className="w-full flex items-start gap-3 rounded-md border px-3 py-2 text-left hover:bg-muted/50 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <GitBranch className="h-4 w-4 mt-0.5 flex-shrink-0" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className="font-medium truncate">{r.full_name}</span>
+                    {r.private && <Lock className="h-3 w-3 text-muted-foreground flex-shrink-0" />}
+                    <Badge variant="outline" className="text-[10px]">{r.default_branch}</Badge>
+                  </div>
+                  {r.description && (
+                    <p className="text-xs text-muted-foreground truncate">{r.description}</p>
+                  )}
+                </div>
+                {cloningId === r.id && cloneMutation.isPending && (
+                  <RefreshCw className="h-4 w-4 animate-spin flex-shrink-0" />
+                )}
+                {cloneMutation.isSuccess && cloningId === r.id && (
+                  <Check className="h-4 w-4 text-green-600 flex-shrink-0" />
+                )}
+              </button>
+            ))
+          )}
+        </div>
+
+        {cloneMutation.isError && (
+          <p className="text-sm text-destructive">
+            {(cloneMutation.error as Error)?.message || 'Failed to clone'}
+          </p>
+        )}
+
+        <DialogFooter>
+          <Button variant="outline" onClick={() => onOpenChange(false)}>Close</Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
 }

@@ -138,6 +138,33 @@ func (s *Store) DeleteToken(repoURL string) error {
 	return s.save(creds)
 }
 
+// globalKey returns the reserved key used to store a provider-wide token.
+// The __provider:name prefix cannot collide with a real repo URL (no scheme).
+func globalKey(provider string) string {
+	return "__provider:" + provider
+}
+
+// SaveGlobalToken stores a token for a provider (e.g. "github") so it can be
+// reused across every repo from that host.
+func (s *Store) SaveGlobalToken(provider, token string) error {
+	return s.SaveToken(globalKey(provider), token)
+}
+
+// GetGlobalToken retrieves the provider-wide token.
+func (s *Store) GetGlobalToken(provider string) (string, error) {
+	return s.GetToken(globalKey(provider))
+}
+
+// HasGlobalToken reports whether a provider-wide token is stored.
+func (s *Store) HasGlobalToken(provider string) bool {
+	return s.HasToken(globalKey(provider))
+}
+
+// DeleteGlobalToken removes the provider-wide token.
+func (s *Store) DeleteGlobalToken(provider string) error {
+	return s.DeleteToken(globalKey(provider))
+}
+
 // load reads credentials from disk
 func (s *Store) load() (*credentials, error) {
 	data, err := os.ReadFile(s.path)

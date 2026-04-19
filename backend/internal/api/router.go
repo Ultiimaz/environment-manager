@@ -66,6 +66,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	statsHandler := handlers.NewStatsHandler(cfg.DockerClient, cfg.StatsStore, cfg.StatsCollector)
 	execHandler := handlers.NewExecHandler(cfg.DockerClient, cfg.Logger)
 	reposHandler := handlers.NewReposHandler(cfg.ReposManager)
+	githubHandler := handlers.NewGitHubHandler(cfg.ReposManager.Credentials(), cfg.Logger)
 
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
@@ -143,6 +144,14 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Get("/{id}/files", reposHandler.GetFiles)
 			r.Get("/{id}/compose", reposHandler.GetComposeFiles)
 			r.Get("/{id}/content", reposHandler.GetFileContent)
+		})
+
+		// GitHub integration (single provider-wide PAT)
+		r.Route("/github", func(r chi.Router) {
+			r.Get("/status", githubHandler.GetStatus)
+			r.Post("/token", githubHandler.SetToken)
+			r.Delete("/token", githubHandler.DeleteToken)
+			r.Get("/repos", githubHandler.ListRepos)
 		})
 
 		// Webhooks

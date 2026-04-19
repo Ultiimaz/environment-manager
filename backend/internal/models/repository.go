@@ -8,6 +8,7 @@ type Repository struct {
 	Name         string    `json:"name" yaml:"name"`
 	URL          string    `json:"url" yaml:"url"`
 	Branch       string    `json:"branch" yaml:"branch"`
+	CommitSHA    string    `json:"commit_sha,omitempty" yaml:"commit_sha,omitempty"`
 	LocalPath    string    `json:"local_path" yaml:"local_path"`
 	HasToken     bool      `json:"has_token" yaml:"-"`
 	ClonedAt     time.Time `json:"cloned_at" yaml:"cloned_at"`

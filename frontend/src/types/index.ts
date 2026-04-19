@@ -150,6 +150,7 @@ export interface Repository {
   name: string;
   url: string;
   branch: string;
+  commit_sha?: string;
   local_path: string;
   has_token: boolean;
   cloned_at: string;
@@ -161,6 +162,24 @@ export interface CloneRequest {
   url: string;
   branch?: string;
   token?: string;
+}
+
+export interface GitHubStatus {
+  connected: boolean;
+  login?: string;
+  avatar_url?: string;
+}
+
+export interface GitHubRepo {
+  id: number;
+  name: string;
+  full_name: string;
+  private: boolean;
+  clone_url: string;
+  html_url: string;
+  description: string;
+  default_branch: string;
+  updated_at: string;
 }
 
 export interface FileInfo {

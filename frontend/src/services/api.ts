@@ -13,7 +13,9 @@ import type {
   ContainerStats,
   Repository,
   CloneRequest,
-  FileInfo
+  FileInfo,
+  GitHubStatus,
+  GitHubRepo
 } from '../types';
 
 const API_BASE = '/api/v1';
@@ -233,6 +235,26 @@ export async function getRepository(id: string): Promise<Repository> {
     throw new Error('Repository not found');
   }
   return response.json();
+}
+
+// GitHub integration (single stored PAT, reused for every GitHub clone/pull)
+export async function getGitHubStatus(): Promise<GitHubStatus> {
+  return fetchApi<GitHubStatus>('/github/status');
+}
+
+export async function setGitHubToken(token: string): Promise<GitHubStatus> {
+  return fetchApi<GitHubStatus>('/github/token', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  });
+}
+
+export async function disconnectGitHub(): Promise<void> {
+  await fetchApi('/github/token', { method: 'DELETE' });
+}
+
+export async function listGitHubRepos(): Promise<GitHubRepo[]> {
+  return fetchApi<GitHubRepo[]>('/github/repos');
 }
 
 export async function pullRepository(id: string): Promise<Repository> {
