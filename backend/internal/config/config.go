@@ -7,11 +7,13 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Port       int
-	DataDir    string
-	StaticDir  string
-	GitRemote  string
-	BaseDomain string
+	Port         int
+	DataDir      string
+	StaticDir    string
+	GitRemote    string
+	BaseDomain   string
+	TraefikIP    string
+	ProxyNetwork string
 }
 
 // Load loads configuration from environment variables
@@ -39,11 +41,23 @@ func Load() (*Config, error) {
 		baseDomain = "localhost"
 	}
 
+	traefikIP := os.Getenv("TRAEFIK_IP")
+	if traefikIP == "" {
+		traefikIP = "127.0.0.1"
+	}
+
+	proxyNetwork := os.Getenv("PROXY_NETWORK")
+	if proxyNetwork == "" {
+		proxyNetwork = "env-manager-net"
+	}
+
 	return &Config{
-		Port:       port,
-		DataDir:    dataDir,
-		StaticDir:  staticDir,
-		GitRemote:  gitRemote,
-		BaseDomain: baseDomain,
+		Port:         port,
+		DataDir:      dataDir,
+		StaticDir:    staticDir,
+		GitRemote:    gitRemote,
+		BaseDomain:   baseDomain,
+		TraefikIP:    traefikIP,
+		ProxyNetwork: proxyNetwork,
 	}, nil
 }

@@ -26,7 +26,7 @@ services:
       - "--api.insecure=true"
       - "--providers.docker=true"
       - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=env-manager-net"
+      - "--providers.docker.network=${PROXY_NETWORK:-my-macvlan-net}"
       - "--entrypoints.web.address=:80"
     ports:
       - "80:80"
@@ -36,10 +36,14 @@ services:
     networks:
       env-manager-net:
         ipv4_address: 172.21.0.3
+      my-macvlan-net:
+        ipv4_address: ${TRAEFIK_IP:-192.168.1.6}
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.traefik.rule=Host(`traefik.${BASE_DOMAIN:-localhost}`)"
+      - "traefik.http.routers.traefik.entrypoints=web"
       - "traefik.http.services.traefik.loadbalancer.server.port=8080"
+      - "traefik.docker.network=${PROXY_NETWORK:-my-macvlan-net}"
     depends_on:
       - coredns
 
@@ -56,15 +60,20 @@ services:
     environment:
       - GIT_REMOTE=${GIT_REMOTE:-}
       - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
+      - TRAEFIK_IP=${TRAEFIK_IP:-192.168.1.6}
+      - PROXY_NETWORK=${PROXY_NETWORK:-my-macvlan-net}
       - PORT=8080
     networks:
       - env-manager-net
+      - my-macvlan-net
     dns:
       - 172.21.0.2
     labels:
       - "traefik.enable=true"
       - "traefik.http.routers.manager.rule=Host(`manager.${BASE_DOMAIN:-localhost}`)"
+      - "traefik.http.routers.manager.entrypoints=web"
       - "traefik.http.services.manager.loadbalancer.server.port=8080"
+      - "traefik.docker.network=${PROXY_NETWORK:-my-macvlan-net}"
     depends_on:
       - coredns
       - traefik
@@ -75,3 +84,5 @@ networks:
     ipam:
       config:
         - subnet: 172.21.0.0/16
+  my-macvlan-net:
+    external: true

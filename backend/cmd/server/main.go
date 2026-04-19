@@ -99,7 +99,7 @@ func main() {
 
 	var proxyManager *proxy.Manager
 	if subdomainRegistry != nil {
-		proxyManager, err = proxy.NewManager(cfg.DataDir, cfg.BaseDomain, subdomainRegistry, logger)
+		proxyManager, err = proxy.NewManager(cfg.DataDir, cfg.BaseDomain, cfg.TraefikIP, cfg.ProxyNetwork, subdomainRegistry, logger)
 		if err != nil {
 			logger.Warn("Failed to initialize proxy manager", zap.Error(err))
 		} else {

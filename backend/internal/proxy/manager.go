@@ -17,7 +17,8 @@ const (
 	TraefikContainerName = "env-traefik"
 	CoreDNSContainerName = "env-coredns"
 	NetworkName          = "env-manager-net"
-	TraefikIP            = "127.0.0.1" // Use localhost for macOS compatibility (Docker internal IPs not reachable from host)
+	DefaultTraefikIP     = "127.0.0.1"
+	DefaultProxyNetwork  = "env-manager-net"
 	CoreDNSIP            = "172.21.0.2"
 )
 
@@ -27,14 +28,23 @@ type Manager struct {
 	registry     *Registry
 	dataDir      string
 	baseDomain   string
+	traefikIP    string
+	proxyNetwork string
 	logger       *zap.Logger
 }
 
 // NewManager creates a new proxy manager
-func NewManager(dataDir, baseDomain string, registry *Registry, logger *zap.Logger) (*Manager, error) {
+func NewManager(dataDir, baseDomain, traefikIP, proxyNetwork string, registry *Registry, logger *zap.Logger) (*Manager, error) {
 	cli, err := client.NewClientWithOpts(client.FromEnv, client.WithAPIVersionNegotiation())
 	if err != nil {
 		return nil, fmt.Errorf("failed to create docker client: %w", err)
+	}
+
+	if traefikIP == "" {
+		traefikIP = DefaultTraefikIP
+	}
+	if proxyNetwork == "" {
+		proxyNetwork = DefaultProxyNetwork
 	}
 
 	return &Manager{
@@ -42,6 +52,8 @@ func NewManager(dataDir, baseDomain string, registry *Registry, logger *zap.Logg
 		registry:     registry,
 		dataDir:      dataDir,
 		baseDomain:   baseDomain,
+		traefikIP:    traefikIP,
+		proxyNetwork: proxyNetwork,
 		logger:       logger,
 	}, nil
 }
@@ -131,18 +143,18 @@ func (m *Manager) generateCorefile(entries []SubdomainEntry) string {
 
 	// Add explicit entries for each registered subdomain (for faster resolution)
 	for _, entry := range entries {
-		sb.WriteString(fmt.Sprintf("        %s %s.%s\n", TraefikIP, entry.Subdomain, m.baseDomain))
+		sb.WriteString(fmt.Sprintf("        %s %s.%s\n", m.traefikIP, entry.Subdomain, m.baseDomain))
 	}
 
 	// Add traefik.baseDomain for Traefik dashboard
-	sb.WriteString(fmt.Sprintf("        %s traefik.%s\n", TraefikIP, m.baseDomain))
+	sb.WriteString(fmt.Sprintf("        %s traefik.%s\n", m.traefikIP, m.baseDomain))
 
 	sb.WriteString("        fallthrough\n")
 	sb.WriteString("    }\n")
 
 	// Template plugin for wildcard - catches any subdomain not in hosts
 	sb.WriteString(fmt.Sprintf("    template IN A %s {\n", m.baseDomain))
-	sb.WriteString(fmt.Sprintf("        answer \"{{ .Name }} 60 IN A %s\"\n", TraefikIP))
+	sb.WriteString(fmt.Sprintf("        answer \"{{ .Name }} 60 IN A %s\"\n", m.traefikIP))
 	sb.WriteString("    }\n")
 
 	sb.WriteString("    log\n")
@@ -229,7 +241,7 @@ func (m *Manager) GenerateTraefikLabels(subdomain, serviceName string, port int)
 		fmt.Sprintf("traefik.http.routers.%s.rule", routerName):                      fmt.Sprintf("Host(`%s.%s`)", subdomain, m.baseDomain),
 		fmt.Sprintf("traefik.http.routers.%s.entrypoints", routerName):               "web",
 		fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port", routerName): fmt.Sprintf("%d", port),
-		"traefik.docker.network": NetworkName,
+		"traefik.docker.network": m.proxyNetwork,
 	}
 }
 
@@ -257,16 +269,23 @@ func (m *Manager) InjectTraefikLabels(composeContent string, subdomains map[stri
 		}
 
 		// Also add network
-		networkLine := fmt.Sprintf("    networks:\n      - %s\n", NetworkName)
+		networkLine := fmt.Sprintf("    networks:\n      - %s\n", m.proxyNetwork)
 
 		// Find insertion point (after the service name line)
 		// This is simplified - proper implementation would use YAML library
 		composeContent = injectAfterService(composeContent, serviceName, labelLines.String()+networkLine)
 	}
 
-	// Ensure the network is defined at the bottom
-	if !strings.Contains(composeContent, "networks:") {
-		composeContent += fmt.Sprintf("\nnetworks:\n  %s:\n    external: true\n", NetworkName)
+	// Ensure the proxy network is declared as external at the bottom.
+	// strings.Contains on "networks:" is too broad (would match service-level
+	// networks keys), so check for a top-level declaration of our network.
+	proxyNetDecl := fmt.Sprintf("\n  %s:\n    external: true", m.proxyNetwork)
+	if !strings.Contains(composeContent, proxyNetDecl) {
+		if strings.Contains(composeContent, "\nnetworks:\n") {
+			composeContent += fmt.Sprintf("%s\n", proxyNetDecl)
+		} else {
+			composeContent += fmt.Sprintf("\nnetworks:%s\n", proxyNetDecl)
+		}
 	}
 
 	return composeContent, nil
