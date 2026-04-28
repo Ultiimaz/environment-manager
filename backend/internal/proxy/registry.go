@@ -62,14 +62,13 @@ func (r *Registry) load() error {
 	return nil
 }
 
-// save writes entries to disk
-func (r *Registry) save() error {
-	r.mu.RLock()
+// saveLocked writes entries to disk. Caller must already hold r.mu (write lock).
+// sync.RWMutex is non-recursive, so save() must not acquire any lock itself.
+func (r *Registry) saveLocked() error {
 	entries := make([]SubdomainEntry, 0, len(r.entries))
 	for _, e := range r.entries {
 		entries = append(entries, e)
 	}
-	r.mu.RUnlock()
 
 	data, err := yaml.Marshal(entries)
 	if err != nil {
@@ -94,7 +93,7 @@ func (r *Registry) Register(entry SubdomainEntry) error {
 
 	r.entries[entry.Subdomain] = entry
 
-	return r.save()
+	return r.saveLocked()
 }
 
 // Unregister removes a subdomain entry
@@ -108,7 +107,7 @@ func (r *Registry) Unregister(subdomain string) error {
 
 	delete(r.entries, subdomain)
 
-	return r.save()
+	return r.saveLocked()
 }
 
 // UnregisterByProject removes all subdomains for a project
@@ -122,7 +121,7 @@ func (r *Registry) UnregisterByProject(projectName string) error {
 		}
 	}
 
-	return r.save()
+	return r.saveLocked()
 }
 
 // List returns all registered subdomains
