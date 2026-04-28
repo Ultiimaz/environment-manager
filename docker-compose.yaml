@@ -62,6 +62,7 @@ services:
       - BASE_DOMAIN=${BASE_DOMAIN:-localhost}
       - TRAEFIK_IP=${TRAEFIK_IP:-192.168.1.6}
       - PROXY_NETWORK=${PROXY_NETWORK:-my-macvlan-net}
+      - CREDENTIAL_KEY=${CREDENTIAL_KEY:-}
       - PORT=8080
     networks:
       - env-manager-net
