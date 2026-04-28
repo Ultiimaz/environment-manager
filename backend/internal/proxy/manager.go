@@ -11,6 +11,7 @@ import (
 	"github.com/docker/docker/api/types/filters"
 	"github.com/docker/docker/client"
 	"go.uber.org/zap"
+	"gopkg.in/yaml.v3"
 )
 
 const (
@@ -245,98 +246,164 @@ func (m *Manager) GenerateTraefikLabels(subdomain, serviceName string, port int)
 	}
 }
 
-// InjectTraefikLabels injects Traefik labels into a docker-compose YAML string
-// This is a simple string-based injection - for production, use proper YAML parsing
-func (m *Manager) InjectTraefikLabels(composeContent string, subdomains map[string]SubdomainInfo) (string, error) {
-	// For each service with a subdomain, we need to add labels
-	// This is a simplified version - proper implementation would parse YAML
-
-	for serviceName, info := range subdomains {
-		labels := m.GenerateTraefikLabels(info.Subdomain, serviceName, info.Port)
-
-		// Find the service in the compose content and add labels
-		// This is a basic implementation - could be improved with proper YAML parsing
-		serviceMarker := fmt.Sprintf("  %s:", serviceName)
-		if !strings.Contains(composeContent, serviceMarker) {
-			continue
-		}
-
-		// Build labels string
-		var labelLines strings.Builder
-		labelLines.WriteString("    labels:\n")
-		for k, v := range labels {
-			labelLines.WriteString(fmt.Sprintf("      - \"%s=%s\"\n", k, v))
-		}
-
-		// Also add network
-		networkLine := fmt.Sprintf("    networks:\n      - %s\n", m.proxyNetwork)
-
-		// Find insertion point (after the service name line)
-		// This is simplified - proper implementation would use YAML library
-		composeContent = injectAfterService(composeContent, serviceName, labelLines.String()+networkLine)
-	}
-
-	// Ensure the proxy network is declared as external at the bottom.
-	// strings.Contains on "networks:" is too broad (would match service-level
-	// networks keys), so check for a top-level declaration of our network.
-	proxyNetDecl := fmt.Sprintf("\n  %s:\n    external: true", m.proxyNetwork)
-	if !strings.Contains(composeContent, proxyNetDecl) {
-		if strings.Contains(composeContent, "\nnetworks:\n") {
-			composeContent += fmt.Sprintf("%s\n", proxyNetDecl)
-		} else {
-			composeContent += fmt.Sprintf("\nnetworks:%s\n", proxyNetDecl)
-		}
-	}
-
-	return composeContent, nil
-}
-
 // SubdomainInfo contains subdomain configuration for a service
 type SubdomainInfo struct {
 	Subdomain string
 	Port      int
 }
 
-// injectAfterService is a helper to inject content after a service definition
-func injectAfterService(content, serviceName, injection string) string {
-	lines := strings.Split(content, "\n")
-	var result []string
-	inService := false
-	injected := false
+// InjectTraefikLabels injects Traefik labels and the proxy network into a
+// docker-compose YAML using yaml.v3 node-level edits, so existing labels:
+// and networks: keys are merged rather than duplicated.
+func (m *Manager) InjectTraefikLabels(composeContent string, subdomains map[string]SubdomainInfo) (string, error) {
+	var doc yaml.Node
+	if err := yaml.Unmarshal([]byte(composeContent), &doc); err != nil {
+		return "", fmt.Errorf("parse compose YAML: %w", err)
+	}
+	if doc.Kind != yaml.DocumentNode || len(doc.Content) == 0 {
+		return "", fmt.Errorf("compose YAML is empty")
+	}
+	root := doc.Content[0]
+	if root.Kind != yaml.MappingNode {
+		return "", fmt.Errorf("compose YAML root is not a mapping")
+	}
 
-	for i, line := range lines {
-		result = append(result, line)
+	services := findMapValue(root, "services")
+	if services == nil || services.Kind != yaml.MappingNode {
+		return "", fmt.Errorf("compose YAML has no services mapping")
+	}
 
-		// Check if we're entering the target service
-		if strings.HasPrefix(line, "  "+serviceName+":") {
-			inService = true
+	for serviceName, info := range subdomains {
+		svc := findMapValue(services, serviceName)
+		if svc == nil || svc.Kind != yaml.MappingNode {
 			continue
 		}
 
-		// If we're in the service and hit the next service or end of services block
-		if inService && !injected {
-			// Check if next line starts a new service or section
-			if i+1 < len(lines) {
-				nextLine := lines[i+1]
-				// If next line is a new service (starts with 2 spaces + name + colon) or a new top-level key
-				if (len(nextLine) > 2 && nextLine[0:2] == "  " && nextLine[2] != ' ' && strings.Contains(nextLine, ":")) ||
-					(len(nextLine) > 0 && nextLine[0] != ' ' && strings.Contains(nextLine, ":")) {
-					// Insert before next service
-					injectionLines := strings.Split(strings.TrimRight(injection, "\n"), "\n")
-					result = append(result[:len(result)-1], injectionLines...)
-					result = append(result, line)
-					injected = true
-					inService = false
-				}
-			}
+		labels := m.GenerateTraefikLabels(info.Subdomain, serviceName, info.Port)
+		ensureLabels(svc, labels)
+		ensureNetworkOnService(svc, m.proxyNetwork)
+	}
+
+	ensureExternalNetwork(root, m.proxyNetwork)
+
+	out, err := yaml.Marshal(&doc)
+	if err != nil {
+		return "", fmt.Errorf("marshal compose YAML: %w", err)
+	}
+	return string(out), nil
+}
+
+func findMapValue(m *yaml.Node, key string) *yaml.Node {
+	if m == nil || m.Kind != yaml.MappingNode {
+		return nil
+	}
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			return m.Content[i+1]
 		}
 	}
+	return nil
+}
 
-	// If we never injected (service was last), append at the end of the service
-	if !injected && inService {
-		injectionLines := strings.Split(strings.TrimRight(injection, "\n"), "\n")
-		result = append(result, injectionLines...)
+func setMapValue(m *yaml.Node, key string, value *yaml.Node) {
+	if m == nil || m.Kind != yaml.MappingNode {
+		return
 	}
+	for i := 0; i+1 < len(m.Content); i += 2 {
+		if m.Content[i].Value == key {
+			m.Content[i+1] = value
+			return
+		}
+	}
+	m.Content = append(m.Content,
+		&yaml.Node{Kind: yaml.ScalarNode, Value: key},
+		value,
+	)
+}
 
-	return strings.Join(result, "\n")
+func sequenceContainsScalar(seq *yaml.Node, value string) bool {
+	if seq == nil || seq.Kind != yaml.SequenceNode {
+		return false
+	}
+	for _, n := range seq.Content {
+		if n.Kind == yaml.ScalarNode && n.Value == value {
+			return true
+		}
+	}
+	return false
+}
+
+// ensureLabels merges labels into the service. If labels: is missing, it's
+// created as a sequence. Existing map-form labels are converted to sequence
+// form (key=value strings) so we don't have to support both shapes downstream.
+func ensureLabels(svc *yaml.Node, labels map[string]string) {
+	labelsNode := findMapValue(svc, "labels")
+	if labelsNode == nil {
+		labelsNode = &yaml.Node{Kind: yaml.SequenceNode}
+		setMapValue(svc, "labels", labelsNode)
+	} else if labelsNode.Kind == yaml.MappingNode {
+		seq := &yaml.Node{Kind: yaml.SequenceNode}
+		for i := 0; i+1 < len(labelsNode.Content); i += 2 {
+			seq.Content = append(seq.Content, &yaml.Node{
+				Kind:  yaml.ScalarNode,
+				Value: fmt.Sprintf("%s=%s", labelsNode.Content[i].Value, labelsNode.Content[i+1].Value),
+			})
+		}
+		*labelsNode = *seq
+	}
+	if labelsNode.Kind != yaml.SequenceNode {
+		return
+	}
+	for k, v := range labels {
+		entry := fmt.Sprintf("%s=%s", k, v)
+		if !sequenceContainsScalar(labelsNode, entry) {
+			labelsNode.Content = append(labelsNode.Content, &yaml.Node{
+				Kind:  yaml.ScalarNode,
+				Value: entry,
+			})
+		}
+	}
+}
+
+// ensureNetworkOnService makes sure the service's networks list contains the
+// proxy network. Long-form (mapping) networks declarations are left alone.
+func ensureNetworkOnService(svc *yaml.Node, network string) {
+	networksNode := findMapValue(svc, "networks")
+	if networksNode == nil {
+		setMapValue(svc, "networks", &yaml.Node{
+			Kind: yaml.SequenceNode,
+			Content: []*yaml.Node{
+				{Kind: yaml.ScalarNode, Value: network},
+			},
+		})
+		return
+	}
+	if networksNode.Kind == yaml.SequenceNode && !sequenceContainsScalar(networksNode, network) {
+		networksNode.Content = append(networksNode.Content, &yaml.Node{
+			Kind:  yaml.ScalarNode,
+			Value: network,
+		})
+	}
+}
+
+// ensureExternalNetwork makes sure the top-level networks: block declares the
+// proxy network as external so the compose project joins the existing macvlan.
+func ensureExternalNetwork(root *yaml.Node, network string) {
+	topNetworks := findMapValue(root, "networks")
+	if topNetworks == nil {
+		topNetworks = &yaml.Node{Kind: yaml.MappingNode}
+		setMapValue(root, "networks", topNetworks)
+	}
+	if topNetworks.Kind != yaml.MappingNode {
+		return
+	}
+	if findMapValue(topNetworks, network) == nil {
+		setMapValue(topNetworks, network, &yaml.Node{
+			Kind: yaml.MappingNode,
+			Content: []*yaml.Node{
+				{Kind: yaml.ScalarNode, Value: "external"},
+				{Kind: yaml.ScalarNode, Value: "true"},
+			},
+		})
+	}
 }
