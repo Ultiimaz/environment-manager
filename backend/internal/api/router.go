@@ -10,6 +10,7 @@ import (
 
 	"github.com/environment-manager/backend/internal/api/handlers"
 	"github.com/environment-manager/backend/internal/backup"
+	"github.com/environment-manager/backend/internal/builder"
 	"github.com/environment-manager/backend/internal/config"
 	"github.com/environment-manager/backend/internal/docker"
 	"github.com/environment-manager/backend/internal/git"
@@ -32,6 +33,7 @@ type RouterConfig struct {
 	StatsCollector  *stats.Collector
 	ReposManager    *repos.Manager
 	ProjectsStore   *projects.Store
+	Builder         *builder.Runner
 	ProxyManager    *proxy.Manager
 	StaticDir       string
 	DataDir         string
@@ -70,6 +72,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	execHandler := handlers.NewExecHandler(cfg.DockerClient, cfg.Logger)
 	reposHandler := handlers.NewReposHandler(cfg.ReposManager)
 	projectsHandler := handlers.NewProjectsHandler(cfg.ProjectsStore, cfg.ReposManager, cfg.BaseDomain, cfg.Logger)
+	buildsHandler := handlers.NewBuildsHandler(cfg.ProjectsStore, cfg.Builder, cfg.DataDir, cfg.Logger)
 	githubHandler := handlers.NewGitHubHandler(cfg.ReposManager.Credentials(), cfg.Logger)
 
 	// API routes
@@ -159,6 +162,12 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Get("/{id}", projectsHandler.Get)
 		})
 
+		// Build trigger (WS log endpoint registered outside /api/v1, with the
+		// other ws/* routes)
+		r.Route("/envs", func(r chi.Router) {
+			r.Post("/{id}/build", buildsHandler.Trigger)
+		})
+
 		// GitHub integration (single provider-wide PAT)
 		r.Route("/github", func(r chi.Router) {
 			r.Get("/status", githubHandler.GetStatus)
@@ -178,6 +187,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	r.Get("/ws/containers/{id}/stats", statsHandler.StreamStats)
 	r.Get("/ws/containers/{id}/shell", execHandler.Shell)
 	r.Get("/ws/events", handlers.StreamEvents)
+	r.Get("/ws/envs/{id}/build-logs", buildsHandler.StreamLogs)
 
 	// Static files (frontend)
 	fileServer := http.FileServer(http.Dir(cfg.StaticDir))
