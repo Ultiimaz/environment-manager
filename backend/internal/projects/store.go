@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 
 	"gopkg.in/yaml.v3"
@@ -277,4 +278,29 @@ func (s *Store) ListBuildsForEnv(projectID, envID string) ([]*models.Build, erro
 		}
 	}
 	return out, nil
+}
+
+// normalizeRepoURL strips a trailing ".git" and trailing "/" so two
+// equivalent forms of the same URL match. Lowercasing is intentionally NOT
+// applied — repo paths are case-sensitive on most git hosts.
+func normalizeRepoURL(u string) string {
+	u = strings.TrimSuffix(u, "/")
+	u = strings.TrimSuffix(u, ".git")
+	return u
+}
+
+// GetProjectByRepoURL finds a project by repo URL, tolerating ".git" and
+// trailing-slash variations. Returns ErrNotFound when no match.
+func (s *Store) GetProjectByRepoURL(url string) (*models.Project, error) {
+	target := normalizeRepoURL(url)
+	all, err := s.ListProjects()
+	if err != nil {
+		return nil, err
+	}
+	for _, p := range all {
+		if normalizeRepoURL(p.RepoURL) == target {
+			return p, nil
+		}
+	}
+	return nil, ErrNotFound
 }

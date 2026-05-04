@@ -214,3 +214,39 @@ func TestStore_ListBuildsForEnv(t *testing.T) {
 		t.Fatalf("expected 3 builds for p1--main, got %d", len(list))
 	}
 }
+
+func TestStore_GetProjectByRepoURL(t *testing.T) {
+	s := newTestStore(t)
+	p := &models.Project{
+		ID:      "id1",
+		Name:    "myapp",
+		RepoURL: "https://github.com/u/myapp",
+		Status:  models.ProjectStatusActive,
+	}
+	if err := s.SaveProject(p); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+
+	got, err := s.GetProjectByRepoURL("https://github.com/u/myapp")
+	if err != nil {
+		t.Fatalf("GetProjectByRepoURL: %v", err)
+	}
+	if got.ID != p.ID {
+		t.Errorf("ID = %q, want %q", got.ID, p.ID)
+	}
+
+	// trailing .git should match — repo URL normalization
+	got2, err := s.GetProjectByRepoURL("https://github.com/u/myapp.git")
+	if err != nil {
+		t.Fatalf("GetProjectByRepoURL .git variant: %v", err)
+	}
+	if got2.ID != p.ID {
+		t.Errorf("ID for .git variant = %q, want %q", got2.ID, p.ID)
+	}
+
+	// missing → ErrNotFound
+	_, err = s.GetProjectByRepoURL("https://github.com/u/other")
+	if !errors.Is(err, ErrNotFound) {
+		t.Errorf("expected ErrNotFound, got %v", err)
+	}
+}
