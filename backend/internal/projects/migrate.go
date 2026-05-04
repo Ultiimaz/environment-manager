@@ -132,8 +132,14 @@ func mapDesiredStateToEnvStatus(desired string) models.EnvironmentStatus {
 	return models.EnvStatusPending
 }
 
-// legacyProjectID hashes (repo_url || compose_name) so unlinked projects
-// keyed by name don't collide with linked ones keyed by URL.
+// legacyProjectID returns a stable 8-byte ID for a migrated project.
+// Linked projects (with a repo URL) are keyed by repoURL alone, so the same
+// repo migrating multiple times yields the same ID. Unlinked projects use
+// "compose:<name>" as the key — the prefix prevents collisions with linked
+// projects whose repo URL might happen to equal a compose project's name.
+// composeName is unused for linked projects today; if a future change
+// supports multiple compose projects per repo, callers should switch to
+// hashing repoURL+":"+composeName to avoid silent ID collisions.
 func legacyProjectID(repoURL, composeName string) string {
 	key := repoURL
 	if key == "" {

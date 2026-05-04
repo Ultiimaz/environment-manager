@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"errors"
 	"testing"
 	"time"
 
@@ -78,8 +79,8 @@ func TestStore_ListProjects_Multiple(t *testing.T) {
 func TestStore_GetProject_NotFound(t *testing.T) {
 	s := newTestStore(t)
 	_, err := s.GetProject("does-not-exist")
-	if err == nil {
-		t.Fatalf("expected error, got nil")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
 	}
 }
 
@@ -91,8 +92,8 @@ func TestStore_DeleteProject(t *testing.T) {
 		t.Fatalf("DeleteProject: %v", err)
 	}
 	_, err := s.GetProject("x")
-	if err == nil {
-		t.Fatalf("expected GetProject after delete to fail")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after delete, got %v", err)
 	}
 }
 
@@ -162,8 +163,8 @@ func TestStore_DeleteEnvironment(t *testing.T) {
 	if err := s.DeleteEnvironment("p1", "x"); err != nil {
 		t.Fatalf("DeleteEnvironment: %v", err)
 	}
-	if _, err := s.GetEnvironment("p1", "x"); err == nil {
-		t.Fatal("expected ErrNotFound after delete")
+	if _, err := s.GetEnvironment("p1", "x"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound after delete, got %v", err)
 	}
 }
 

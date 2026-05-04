@@ -88,7 +88,7 @@ func (s *Store) ListProjects() ([]*models.Project, error) {
 	if err != nil {
 		return nil, err
 	}
-	var out []*models.Project
+	out := []*models.Project{}
 	for _, e := range entries {
 		if !e.IsDir() {
 			continue
@@ -170,11 +170,11 @@ func (s *Store) ListEnvironments(projectID string) ([]*models.Environment, error
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return []*models.Environment{}, nil
 		}
 		return nil, err
 	}
-	var out []*models.Environment
+	out := []*models.Environment{}
 	for _, en := range entries {
 		if en.IsDir() || filepath.Ext(en.Name()) != ".yaml" {
 			continue
@@ -255,11 +255,11 @@ func (s *Store) ListBuildsForEnv(projectID, envID string) ([]*models.Build, erro
 	entries, err := os.ReadDir(dir)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, nil
+			return []*models.Build{}, nil
 		}
 		return nil, err
 	}
-	var out []*models.Build
+	out := []*models.Build{}
 	for _, e := range entries {
 		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
 			continue
