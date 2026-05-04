@@ -15,6 +15,7 @@ import (
 	"github.com/environment-manager/backend/internal/credentials"
 	"github.com/environment-manager/backend/internal/docker"
 	"github.com/environment-manager/backend/internal/git"
+	"github.com/environment-manager/backend/internal/projects"
 	"github.com/environment-manager/backend/internal/proxy"
 	"github.com/environment-manager/backend/internal/repos"
 	"github.com/environment-manager/backend/internal/state"
@@ -90,6 +91,19 @@ func main() {
 	if err != nil {
 		logger.Fatal("Failed to initialize repos manager", zap.Error(err))
 	}
+
+	// Initialize projects store and run one-time legacy migration. Metadata-only;
+	// no behavior changes — old code paths still drive deploys.
+	projectsStore, err := projects.NewStore(cfg.DataDir)
+	if err != nil {
+		logger.Fatal("Failed to initialize projects store", zap.Error(err))
+	}
+	if err := projects.RunLegacyMigration(projectsStore, configLoader, cfg.DataDir); err != nil {
+		logger.Error("Legacy projects migration failed (non-fatal)", zap.Error(err))
+	} else {
+		logger.Info("Legacy projects migration complete")
+	}
+	_ = projectsStore // wired into router in a later step
 
 	// Initialize subdomain registry and proxy manager
 	subdomainRegistry, err := proxy.NewRegistry(cfg.DataDir + "/subdomains.yaml")
