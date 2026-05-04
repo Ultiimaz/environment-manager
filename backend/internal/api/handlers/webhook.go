@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"errors"
 	"net/http"
-	"os/exec"
 	"strings"
 	"time"
 
@@ -268,9 +267,7 @@ func (h *WebhookHandler) processProjectPush(repoURL, ref, sha string) string {
 
 	// Fetch origin so the local clone has the latest commit and ls-tree
 	// can see the new branch tree. Best-effort; continue on failure.
-	fetchCmd := exec.Command("git", "fetch", "origin")
-	fetchCmd.Dir = project.LocalPath
-	if out, err := fetchCmd.CombinedOutput(); err != nil {
+	if out, err := projects.FetchOrigin(project.LocalPath); err != nil {
 		h.logger.Warn("git fetch failed",
 			zap.String("repo", project.LocalPath),
 			zap.Error(err),
@@ -292,7 +289,7 @@ func (h *WebhookHandler) processProjectPush(repoURL, ref, sha string) string {
 
 	if env == nil {
 		// New branch — check it has .dev/ in the tree
-		if !devDirExistsForBranch(project.LocalPath, branch) {
+		if !projects.DevDirExistsForBranch(project.LocalPath, branch) {
 			return "no_dev_dir"
 		}
 
@@ -337,19 +334,6 @@ func (h *WebhookHandler) processProjectPush(repoURL, ref, sha string) string {
 	go h.runner.Build(context.Background(), &envCopy, &buildCopy)
 
 	return "build_enqueued:" + build.ID
-}
-
-// devDirExistsForBranch checks if the given branch's tree (in the local
-// clone) contains a `.dev/` directory. Uses git ls-tree so we don't have
-// to check out the branch.
-func devDirExistsForBranch(repoPath, branch string) bool {
-	cmd := exec.Command("git", "ls-tree", "--name-only", "origin/"+branch, ".dev")
-	cmd.Dir = repoPath
-	out, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	return strings.TrimSpace(string(out)) != ""
 }
 
 // GitLab handles GitLab webhook events
