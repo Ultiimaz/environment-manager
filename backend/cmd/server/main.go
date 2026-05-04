@@ -9,6 +9,9 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/google/uuid"
+	"go.uber.org/zap"
+
 	"github.com/environment-manager/backend/internal/api"
 	"github.com/environment-manager/backend/internal/backup"
 	"github.com/environment-manager/backend/internal/builder"
@@ -16,12 +19,12 @@ import (
 	"github.com/environment-manager/backend/internal/credentials"
 	"github.com/environment-manager/backend/internal/docker"
 	"github.com/environment-manager/backend/internal/git"
+	"github.com/environment-manager/backend/internal/models"
 	"github.com/environment-manager/backend/internal/projects"
 	"github.com/environment-manager/backend/internal/proxy"
 	"github.com/environment-manager/backend/internal/repos"
 	"github.com/environment-manager/backend/internal/state"
 	"github.com/environment-manager/backend/internal/stats"
-	"go.uber.org/zap"
 )
 
 func main() {
@@ -116,6 +119,17 @@ func main() {
 	buildExec := builder.DockerComposeExecutor{}
 	buildRunner := builder.NewRunner(projectsStore, buildExec, cfg.DataDir, cfg.ProxyNetwork, buildQueue, logger)
 
+	spawner := &reconcileSpawner{
+		store:              projectsStore,
+		runner:             buildRunner,
+		fallbackBaseDomain: cfg.BaseDomain,
+	}
+	if summaries, err := projects.ReconcileBranches(context.Background(), projectsStore, spawner, cfg.BaseDomain, logger); err != nil {
+		logger.Error("reconcile branches failed", zap.Error(err))
+	} else if len(summaries) > 0 {
+		logger.Info("Reconcile complete", zap.Strings("changes", summaries))
+	}
+
 	// Initialize subdomain registry and proxy manager
 	subdomainRegistry, err := proxy.NewRegistry(cfg.DataDir + "/subdomains.yaml")
 	if err != nil {
@@ -190,4 +204,51 @@ func main() {
 	}
 
 	logger.Info("Server stopped")
+}
+
+// reconcileSpawner wires projects.ReconcileBranches to the actual Store +
+// Runner. Lives in main rather than projects to keep the projects package
+// import-free of builder.
+type reconcileSpawner struct {
+	store              *projects.Store
+	runner             *builder.Runner
+	fallbackBaseDomain string
+}
+
+func (s *reconcileSpawner) SpawnPreview(ctx context.Context, project *models.Project, branch, slug string) error {
+	env := &models.Environment{
+		ID:          project.ID + "--" + slug,
+		ProjectID:   project.ID,
+		Branch:      branch,
+		BranchSlug:  slug,
+		Kind:        models.EnvKindPreview,
+		ComposeFile: ".dev/docker-compose.dev.yml",
+		Status:      models.EnvStatusPending,
+		CreatedAt:   time.Now().UTC(),
+	}
+	if branch == project.DefaultBranch {
+		env.Kind = models.EnvKindProd
+		env.ComposeFile = ".dev/docker-compose.prod.yml"
+	}
+	env.URL = projects.ComposeURL(project, env, s.fallbackBaseDomain)
+	if err := s.store.SaveEnvironment(env); err != nil {
+		return err
+	}
+
+	build := &models.Build{
+		ID:          uuid.NewString(),
+		EnvID:       env.ID,
+		TriggeredBy: models.BuildTriggerBranchCreate,
+		StartedAt:   time.Now().UTC(),
+		Status:      models.BuildStatusRunning,
+	}
+	if err := s.store.SaveBuild(project.ID, build); err != nil {
+		return err
+	}
+	go s.runner.Build(context.Background(), env, build)
+	return nil
+}
+
+func (s *reconcileSpawner) Teardown(ctx context.Context, env *models.Environment) error {
+	return s.runner.Teardown(ctx, env)
 }
