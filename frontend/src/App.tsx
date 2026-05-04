@@ -8,12 +8,16 @@ import Volumes from './pages/Volumes'
 import Compose from './pages/Compose'
 import Network from './pages/Network'
 import Settings from './pages/Settings'
+import Projects from './pages/Projects'
+import ProjectDetail from './pages/ProjectDetail'
 
 function App() {
   return (
     <Routes>
       <Route path="/" element={<AppLayout />}>
         <Route index element={<Dashboard />} />
+        <Route path="projects" element={<Projects />} />
+        <Route path="projects/:id" element={<ProjectDetail />} />
         <Route path="repos" element={<Repositories />} />
         <Route path="containers" element={<Containers />} />
         <Route path="containers/:id" element={<ContainerDetail />} />

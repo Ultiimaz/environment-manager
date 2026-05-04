@@ -202,3 +202,64 @@ export interface SubdomainEntry {
   port: number;
   created_at: string;
 }
+
+export interface Project {
+  id: string
+  name: string
+  repo_url: string
+  local_path: string
+  default_branch: string
+  external_domain?: string
+  database?: { engine: string; version: string }
+  public_branches?: string[]
+  expose?: { service: string; port: number }
+  status: 'active' | 'archived' | 'stale'
+  created_at: string
+  migrated_from_compose?: string
+}
+
+export interface Environment {
+  id: string
+  project_id: string
+  branch: string
+  branch_slug: string
+  kind: 'prod' | 'preview' | 'legacy'
+  url: string
+  compose_file: string
+  status: 'pending' | 'building' | 'running' | 'failed' | 'destroying'
+  last_build_id?: string
+  last_deployed_sha?: string
+  created_at: string
+}
+
+export interface Build {
+  id: string
+  env_id: string
+  triggered_by: 'webhook' | 'manual' | 'branch-create' | 'clone'
+  sha: string
+  started_at: string
+  finished_at?: string
+  status: 'running' | 'success' | 'failed' | 'cancelled'
+  log_path: string
+}
+
+export interface ProjectDetail {
+  project: Project
+  environments: Environment[]
+}
+
+export interface CreateProjectResponse {
+  project: Project
+  environment: Environment
+  required_secrets: string[]
+}
+
+export interface CreateProjectRequest {
+  repo_url: string
+  token?: string
+}
+
+export interface TriggerBuildResponse {
+  build_id: string
+  env_id: string
+}
