@@ -15,10 +15,35 @@ import type {
   CloneRequest,
   FileInfo,
   GitHubStatus,
-  GitHubRepo
+  GitHubRepo,
+  Project,
+  ProjectDetail,
+  CreateProjectRequest,
+  CreateProjectResponse,
+  TriggerBuildResponse,
 } from '../types';
 
 const API_BASE = '/api/v1';
+
+async function fetchRaw<T>(url: string, options?: RequestInit): Promise<T> {
+  const response = await fetch(`${API_BASE}${url}`, {
+    ...options,
+    headers: {
+      'Content-Type': 'application/json',
+      ...options?.headers,
+    },
+  });
+  if (!response.ok) {
+    let msg = `HTTP ${response.status}`;
+    try {
+      const body = await response.json();
+      if (body.message) msg = body.message;
+      else if (body.error) msg = body.error;
+    } catch {/* ignore */}
+    throw new Error(msg);
+  }
+  return response.json();
+}
 
 async function fetchApi<T>(url: string, options?: RequestInit): Promise<T> {
   const response = await fetch(`${API_BASE}${url}`, {
@@ -316,4 +341,33 @@ export async function getRepositoryFileContent(id: string, path: string): Promis
     throw new Error('Failed to fetch file content');
   }
   return response.text();
+}
+
+// Projects
+export async function getProjects(): Promise<Project[]> {
+  return fetchRaw<Project[]>('/projects');
+}
+
+export async function getProject(id: string): Promise<ProjectDetail> {
+  return fetchRaw<ProjectDetail>(`/projects/${id}`);
+}
+
+export async function createProject(req: CreateProjectRequest): Promise<CreateProjectResponse> {
+  return fetchRaw<CreateProjectResponse>('/projects', {
+    method: 'POST',
+    body: JSON.stringify(req),
+  });
+}
+
+// Builds
+export async function triggerBuild(envId: string): Promise<TriggerBuildResponse> {
+  return fetchApi<TriggerBuildResponse>(`/envs/${envId}/build`, {
+    method: 'POST',
+  });
+}
+
+// WebSocket URL helper for build logs
+export function buildLogWsUrl(envId: string): string {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
+  return `${proto}//${window.location.host}/ws/envs/${envId}/build-logs`;
 }
