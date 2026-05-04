@@ -69,7 +69,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	statsHandler := handlers.NewStatsHandler(cfg.DockerClient, cfg.StatsStore, cfg.StatsCollector)
 	execHandler := handlers.NewExecHandler(cfg.DockerClient, cfg.Logger)
 	reposHandler := handlers.NewReposHandler(cfg.ReposManager)
-	projectsHandler := handlers.NewProjectsHandler(cfg.ProjectsStore, cfg.ReposManager, cfg.Logger)
+	projectsHandler := handlers.NewProjectsHandler(cfg.ProjectsStore, cfg.ReposManager, cfg.BaseDomain, cfg.Logger)
 	githubHandler := handlers.NewGitHubHandler(cfg.ReposManager.Credentials(), cfg.Logger)
 
 	// API routes

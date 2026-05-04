@@ -31,13 +31,17 @@ type ProjectsHandler struct {
 }
 
 // NewProjectsHandler wires the dependencies. baseDomain is the fallback
-// (e.g. "home") used by ComposeURL when ExternalDomain is unset.
-func NewProjectsHandler(store *projects.Store, reposManager *repos.Manager, logger *zap.Logger) *ProjectsHandler {
+// (e.g. "home") used by ComposeURL when ExternalDomain is unset; pass an
+// empty string to fall back to the literal "home" default.
+func NewProjectsHandler(store *projects.Store, reposManager *repos.Manager, baseDomain string, logger *zap.Logger) *ProjectsHandler {
+	if baseDomain == "" {
+		baseDomain = "home"
+	}
 	return &ProjectsHandler{
 		store:        store,
 		reposManager: reposManager,
 		logger:       logger,
-		baseDomain:   "home",
+		baseDomain:   baseDomain,
 	}
 }
 
@@ -156,12 +160,24 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	requiredSecrets := devInfo.SecretKeys
+	if requiredSecrets == nil {
+		requiredSecrets = []string{}
+	}
+
+	h.logger.Info("project created",
+		zap.String("id", project.ID),
+		zap.String("name", project.Name),
+		zap.String("repo_url", project.RepoURL),
+		zap.String("default_branch", project.DefaultBranch),
+	)
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 	_ = json.NewEncoder(w).Encode(CreateProjectResponse{
 		Project:         project,
 		Environment:     env,
-		RequiredSecrets: devInfo.SecretKeys,
+		RequiredSecrets: requiredSecrets,
 	})
 }
 
