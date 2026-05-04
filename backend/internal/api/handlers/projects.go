@@ -133,6 +133,8 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	prodSlug, err := projects.BranchSlug(defaultBranch)
 	if err != nil {
+		_ = h.store.DeleteProject(project.ID)
+		_ = h.reposManager.Delete(repo.ID)
 		respondError(w, http.StatusInternalServerError, "slug_failed", err.Error())
 		return
 	}
@@ -148,6 +150,8 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 	}
 	env.URL = projects.ComposeURL(project, env, h.baseDomain)
 	if err := h.store.SaveEnvironment(env); err != nil {
+		_ = h.store.DeleteProject(project.ID)
+		_ = h.reposManager.Delete(repo.ID)
 		respondError(w, http.StatusInternalServerError, "save_env_failed", err.Error())
 		return
 	}
