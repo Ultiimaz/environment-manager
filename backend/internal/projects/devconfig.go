@@ -12,10 +12,11 @@ import (
 // DevConfig is the parsed contents of a repo's .dev/config.yaml.
 // All fields are optional; defaults are filled in by the caller.
 type DevConfig struct {
-	ProjectName    string         `yaml:"project_name"`
-	ExternalDomain string         `yaml:"external_domain"`
-	PublicBranches []string       `yaml:"public_branches"`
-	Database       *models.DBSpec `yaml:"database"`
+	ProjectName    string              `yaml:"project_name"`
+	ExternalDomain string              `yaml:"external_domain"`
+	PublicBranches []string            `yaml:"public_branches"`
+	Database       *models.DBSpec      `yaml:"database"`
+	Expose         *models.ExposeSpec  `yaml:"expose"`
 }
 
 // ErrInvalidDevConfig is returned when the config file is malformed
@@ -46,6 +47,14 @@ func ParseDevConfig(data []byte) (*DevConfig, error) {
 		}
 		if cfg.Database.Version == "" {
 			return nil, fmt.Errorf("%w: database.version required", ErrInvalidDevConfig)
+		}
+	}
+	if cfg.Expose != nil {
+		if cfg.Expose.Service == "" {
+			return nil, fmt.Errorf("%w: expose.service must be non-empty", ErrInvalidDevConfig)
+		}
+		if cfg.Expose.Port <= 0 || cfg.Expose.Port >= 65536 {
+			return nil, fmt.Errorf("%w: expose.port must be between 1 and 65535", ErrInvalidDevConfig)
 		}
 	}
 	return &cfg, nil

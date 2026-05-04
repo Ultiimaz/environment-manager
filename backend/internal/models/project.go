@@ -58,6 +58,13 @@ type DBSpec struct {
 	Version string `yaml:"version" json:"version"` // semver string, e.g. "16"
 }
 
+// ExposeSpec identifies which service + port Traefik should route to.
+// Nil means "use convention": target the first service with a ports: declaration.
+type ExposeSpec struct {
+	Service string `yaml:"service" json:"service"`
+	Port    int    `yaml:"port" json:"port"`
+}
+
 // Project is one onboarded repo with a `.dev/` directory (or a legacy
 // migrated compose project). One row per repo.
 type Project struct {
@@ -73,7 +80,8 @@ type Project struct {
 	CreatedAt      time.Time     `yaml:"created_at" json:"created_at"`
 	// MigratedFromCompose names the legacy ComposeProject this Project was
 	// created from, when applicable. Empty for natively-onboarded projects.
-	MigratedFromCompose string `yaml:"migrated_from_compose,omitempty" json:"migrated_from_compose,omitempty"`
+	MigratedFromCompose string      `yaml:"migrated_from_compose,omitempty" json:"migrated_from_compose,omitempty"`
+	Expose              *ExposeSpec `yaml:"expose,omitempty" json:"expose,omitempty"`
 }
 
 // Environment is a deployed instance of a Project for one branch.

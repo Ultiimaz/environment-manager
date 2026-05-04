@@ -126,6 +126,7 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		ExternalDomain: devInfo.Config.ExternalDomain,
 		Database:       devInfo.Config.Database,
 		PublicBranches: devInfo.Config.PublicBranches,
+		Expose:         devInfo.Config.Expose,
 		Status:         models.ProjectStatusActive,
 		CreatedAt:      now,
 	}

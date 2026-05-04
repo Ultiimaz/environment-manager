@@ -69,6 +69,42 @@ database:
 			nil,
 			true,
 		},
+		{
+			"expose valid",
+			"expose:\n  service: web\n  port: 3000\n",
+			&DevConfig{Expose: &models.ExposeSpec{Service: "web", Port: 3000}},
+			false,
+		},
+		{
+			"expose missing service rejected",
+			"expose:\n  port: 3000\n",
+			nil,
+			true,
+		},
+		{
+			"expose zero port rejected",
+			"expose:\n  service: web\n  port: 0\n",
+			nil,
+			true,
+		},
+		{
+			"expose negative port rejected",
+			"expose:\n  service: web\n  port: -1\n",
+			nil,
+			true,
+		},
+		{
+			"expose port 65536 rejected",
+			"expose:\n  service: web\n  port: 65536\n",
+			nil,
+			true,
+		},
+		{
+			"expose port 65535 accepted",
+			"expose:\n  service: web\n  port: 65535\n",
+			&DevConfig{Expose: &models.ExposeSpec{Service: "web", Port: 65535}},
+			false,
+		},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
