@@ -118,3 +118,88 @@ func (s *Store) DeleteProject(id string) error {
 	}
 	return os.RemoveAll(dir)
 }
+
+func (s *Store) envPath(projectID, branchSlug string) string {
+	return filepath.Join(s.root, projectID, "environments", branchSlug+".yaml")
+}
+
+// SaveEnvironment writes an environment to disk under its project.
+func (s *Store) SaveEnvironment(e *models.Environment) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if e.ProjectID == "" || e.BranchSlug == "" {
+		return errors.New("environment ProjectID and BranchSlug required")
+	}
+	dir := filepath.Join(s.root, e.ProjectID, "environments")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(e)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.envPath(e.ProjectID, e.BranchSlug), data, 0644)
+}
+
+// GetEnvironment loads an environment by project ID and branch slug.
+func (s *Store) GetEnvironment(projectID, branchSlug string) (*models.Environment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	data, err := os.ReadFile(s.envPath(projectID, branchSlug))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	var e models.Environment
+	if err := yaml.Unmarshal(data, &e); err != nil {
+		return nil, err
+	}
+	return &e, nil
+}
+
+// ListEnvironments returns all environments belonging to a project.
+func (s *Store) ListEnvironments(projectID string) ([]*models.Environment, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	dir := filepath.Join(s.root, projectID, "environments")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []*models.Environment
+	for _, en := range entries {
+		if en.IsDir() || filepath.Ext(en.Name()) != ".yaml" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, en.Name()))
+		if err != nil {
+			continue
+		}
+		var e models.Environment
+		if err := yaml.Unmarshal(data, &e); err != nil {
+			continue
+		}
+		out = append(out, &e)
+	}
+	return out, nil
+}
+
+// DeleteEnvironment removes the env file. Build records under it are kept.
+func (s *Store) DeleteEnvironment(projectID, branchSlug string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	path := s.envPath(projectID, branchSlug)
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return ErrNotFound
+	}
+	return os.Remove(path)
+}

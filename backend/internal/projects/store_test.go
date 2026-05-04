@@ -95,3 +95,74 @@ func TestStore_DeleteProject(t *testing.T) {
 		t.Fatalf("expected GetProject after delete to fail")
 	}
 }
+
+func TestStore_EnvironmentRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	p := &models.Project{ID: "p1", Name: "p", Status: models.ProjectStatusActive}
+	if err := s.SaveProject(p); err != nil {
+		t.Fatalf("SaveProject: %v", err)
+	}
+	e := &models.Environment{
+		ID:         "p1--main",
+		ProjectID:  "p1",
+		Branch:     "main",
+		BranchSlug: "main",
+		Kind:       models.EnvKindProd,
+		URL:        "p.home",
+		Status:     models.EnvStatusPending,
+		CreatedAt:  time.Now().UTC().Truncate(time.Second),
+	}
+	if err := s.SaveEnvironment(e); err != nil {
+		t.Fatalf("SaveEnvironment: %v", err)
+	}
+	got, err := s.GetEnvironment("p1", "main")
+	if err != nil {
+		t.Fatalf("GetEnvironment: %v", err)
+	}
+	if got.Branch != e.Branch || got.Kind != e.Kind {
+		t.Fatalf("env mismatch: got %+v want %+v", got, e)
+	}
+}
+
+func TestStore_ListEnvironments(t *testing.T) {
+	s := newTestStore(t)
+	p := &models.Project{ID: "p1", Name: "p", Status: models.ProjectStatusActive}
+	_ = s.SaveProject(p)
+	for _, slug := range []string{"main", "develop", "feature-x"} {
+		e := &models.Environment{
+			ID:         "p1--" + slug,
+			ProjectID:  "p1",
+			Branch:     slug,
+			BranchSlug: slug,
+			Kind:       models.EnvKindPreview,
+			Status:     models.EnvStatusPending,
+		}
+		if err := s.SaveEnvironment(e); err != nil {
+			t.Fatalf("SaveEnvironment %s: %v", slug, err)
+		}
+	}
+	list, err := s.ListEnvironments("p1")
+	if err != nil {
+		t.Fatalf("ListEnvironments: %v", err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("expected 3 envs, got %d", len(list))
+	}
+}
+
+func TestStore_DeleteEnvironment(t *testing.T) {
+	s := newTestStore(t)
+	p := &models.Project{ID: "p1", Name: "p", Status: models.ProjectStatusActive}
+	_ = s.SaveProject(p)
+	e := &models.Environment{
+		ID: "p1--x", ProjectID: "p1", Branch: "x", BranchSlug: "x",
+		Kind: models.EnvKindPreview, Status: models.EnvStatusPending,
+	}
+	_ = s.SaveEnvironment(e)
+	if err := s.DeleteEnvironment("p1", "x"); err != nil {
+		t.Fatalf("DeleteEnvironment: %v", err)
+	}
+	if _, err := s.GetEnvironment("p1", "x"); err == nil {
+		t.Fatal("expected ErrNotFound after delete")
+	}
+}
