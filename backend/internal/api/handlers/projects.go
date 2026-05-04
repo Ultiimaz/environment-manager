@@ -194,3 +194,46 @@ func projectIDFromRepo(url string) string {
 func (h *ProjectsHandler) urlID(r *http.Request) string {
 	return chi.URLParam(r, "id")
 }
+
+// ProjectDetail is the GET /api/v1/projects/{id} response: the project plus
+// its environments. Builds are reachable via separate endpoints later.
+type ProjectDetail struct {
+	Project      *models.Project       `json:"project"`
+	Environments []*models.Environment `json:"environments"`
+}
+
+// List handles GET /api/v1/projects.
+func (h *ProjectsHandler) List(w http.ResponseWriter, r *http.Request) {
+	list, err := h.store.ListProjects()
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "store_error", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(list)
+}
+
+// Get handles GET /api/v1/projects/{id}.
+func (h *ProjectsHandler) Get(w http.ResponseWriter, r *http.Request) {
+	id := h.urlID(r)
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "missing_id", "id is required")
+		return
+	}
+	p, err := h.store.GetProject(id)
+	if err != nil {
+		if errors.Is(err, projects.ErrNotFound) {
+			respondError(w, http.StatusNotFound, "not_found", "project not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "store_error", err.Error())
+		return
+	}
+	envs, err := h.store.ListEnvironments(p.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "store_error", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(ProjectDetail{Project: p, Environments: envs})
+}

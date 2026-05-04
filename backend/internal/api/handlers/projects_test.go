@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -13,8 +14,10 @@ import (
 	"testing"
 
 	"github.com/environment-manager/backend/internal/credentials"
+	"github.com/environment-manager/backend/internal/models"
 	"github.com/environment-manager/backend/internal/projects"
 	"github.com/environment-manager/backend/internal/repos"
+	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 )
 
@@ -175,5 +178,57 @@ func TestProjectsHandler_Create_MissingRepoURL(t *testing.T) {
 
 	if rec.Code != http.StatusBadRequest {
 		t.Fatalf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestProjectsHandler_List_Empty(t *testing.T) {
+	h, _ := newTestProjectsHandler(t)
+	req := httptest.NewRequest("GET", "/api/v1/projects", nil)
+	rec := httptest.NewRecorder()
+	h.List(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", rec.Code)
+	}
+	body := bytes.TrimSpace(rec.Body.Bytes())
+	if string(body) != "[]" {
+		t.Errorf("body = %s, want []", body)
+	}
+}
+
+func TestProjectsHandler_List_AfterCreate(t *testing.T) {
+	h, _ := newTestProjectsHandler(t)
+	repoPath := makeFixtureRepo(t)
+	bodyBytes, _ := json.Marshal(map[string]string{"repo_url": fileURL(repoPath)})
+
+	req := httptest.NewRequest("POST", "/api/v1/projects", bytes.NewReader(bodyBytes))
+	h.Create(httptest.NewRecorder(), req)
+
+	listReq := httptest.NewRequest("GET", "/api/v1/projects", nil)
+	listRec := httptest.NewRecorder()
+	h.List(listRec, listReq)
+	if listRec.Code != http.StatusOK {
+		t.Fatalf("list status = %d", listRec.Code)
+	}
+	var list []*models.Project
+	if err := json.NewDecoder(listRec.Body).Decode(&list); err != nil {
+		t.Fatalf("decode: %v", err)
+	}
+	if len(list) != 1 {
+		t.Fatalf("expected 1 project, got %d", len(list))
+	}
+}
+
+func TestProjectsHandler_Get_NotFound(t *testing.T) {
+	h, _ := newTestProjectsHandler(t)
+	req := httptest.NewRequest("GET", "/api/v1/projects/nope", nil)
+	rec := httptest.NewRecorder()
+
+	rctx := chi.NewRouteContext()
+	rctx.URLParams.Add("id", "nope")
+	req = req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+
+	h.Get(rec, req)
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }
