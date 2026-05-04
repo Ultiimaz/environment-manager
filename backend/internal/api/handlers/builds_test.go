@@ -29,7 +29,7 @@ func newBuildsHandlerTest(t *testing.T) (*BuildsHandler, *projects.Store, string
 	t.Helper()
 	dataDir := t.TempDir()
 	store, _ := projects.NewStore(dataDir)
-	r := builder.NewRunner(store, fakeExec{}, dataDir, builder.NewQueue(), zap.NewNop())
+	r := builder.NewRunner(store, fakeExec{}, dataDir, "", builder.NewQueue(), zap.NewNop())
 	h := NewBuildsHandler(store, r, dataDir, zap.NewNop())
 	return h, store, dataDir
 }

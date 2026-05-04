@@ -81,7 +81,7 @@ func newRunnerTest(t *testing.T) (*Runner, *projects.Store, *models.Project, *mo
 	}
 
 	exec := &fakeExecutor{output: "Step 1/3 : FROM alpine\n"}
-	r := NewRunner(store, exec, dataDir, NewQueue(), zap.NewNop())
+	r := NewRunner(store, exec, dataDir, "", NewQueue(), zap.NewNop())
 	return r, store, project, env, dataDir, exec
 }
 

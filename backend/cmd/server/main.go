@@ -114,7 +114,7 @@ func main() {
 
 	buildQueue := builder.NewQueue()
 	buildExec := builder.DockerComposeExecutor{}
-	buildRunner := builder.NewRunner(projectsStore, buildExec, cfg.DataDir, buildQueue, logger)
+	buildRunner := builder.NewRunner(projectsStore, buildExec, cfg.DataDir, cfg.ProxyNetwork, buildQueue, logger)
 
 	// Initialize subdomain registry and proxy manager
 	subdomainRegistry, err := proxy.NewRegistry(cfg.DataDir + "/subdomains.yaml")
