@@ -1,22 +1,33 @@
 package handlers
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
+	"os/exec"
+	"strings"
+	"time"
 
+	"github.com/google/uuid"
+	"go.uber.org/zap"
+
+	"github.com/environment-manager/backend/internal/builder"
 	"github.com/environment-manager/backend/internal/git"
 	"github.com/environment-manager/backend/internal/models"
+	"github.com/environment-manager/backend/internal/projects"
 	"github.com/environment-manager/backend/internal/state"
 	"github.com/environment-manager/backend/internal/sync"
-	"go.uber.org/zap"
 )
 
 // WebhookHandler handles Git webhook events
 type WebhookHandler struct {
 	gitRepo        *git.Repository
 	stateManager   *state.Manager
-	composeHandler *ComposeHandler // for rebuilding linked projects on push
-	syncController *sync.Controller // Optional: if set, use controller for sync
+	composeHandler *ComposeHandler   // for rebuilding linked projects on push
+	syncController *sync.Controller  // Optional: if set, use controller for sync
+	projectsStore  *projects.Store   // optional; nil pre-step-5 cohabitation
+	runner         *builder.Runner   // optional
 	logger         *zap.Logger
 }
 
@@ -40,6 +51,12 @@ func (h *WebhookHandler) SetSyncController(controller *sync.Controller) {
 	h.syncController = controller
 }
 
+// SetProjectsStore wires the projects store for Project-based push-to-deploy.
+func (h *WebhookHandler) SetProjectsStore(s *projects.Store) { h.projectsStore = s }
+
+// SetRunner wires the builder runner for Project-based push-to-deploy.
+func (h *WebhookHandler) SetRunner(r *builder.Runner) { h.runner = r }
+
 // GitHub handles GitHub webhook events
 func (h *WebhookHandler) GitHub(w http.ResponseWriter, r *http.Request) {
 	var payload models.WebhookPayload
@@ -53,9 +70,17 @@ func (h *WebhookHandler) GitHub(w http.ResponseWriter, r *http.Request) {
 		zap.String("repo", payload.Repository.FullName),
 	)
 
-	// Only process pushes to main/master
+	// New: react to ALL branch pushes for Project repos (preview envs need
+	// every branch, not just main/master). Legacy path below keeps its own filter.
+	projectStatus := h.processProjectPush(payload.Repository.CloneURL, payload.Ref, headSHA(payload))
+
+	// Legacy: only process pushes to main/master for compose projects + state sync.
 	if payload.Ref != "refs/heads/main" && payload.Ref != "refs/heads/master" {
-		respondSuccess(w, map[string]string{"status": "ignored", "reason": "not main branch"})
+		respondSuccess(w, map[string]interface{}{
+			"status":         "ignored",
+			"reason":         "not main branch",
+			"project_status": projectStatus,
+		})
 		return
 	}
 
@@ -77,6 +102,7 @@ func (h *WebhookHandler) GitHub(w http.ResponseWriter, r *http.Request) {
 		respondSuccess(w, map[string]interface{}{
 			"sync":             result,
 			"rebuilt_projects": rebuildResults,
+			"project_status":   projectStatus,
 		})
 		return
 	}
@@ -96,11 +122,20 @@ func (h *WebhookHandler) GitHub(w http.ResponseWriter, r *http.Request) {
 			"status":            "success",
 			"skipped_reconcile": true,
 			"reason":            "state snapshot commit",
+			"project_status":    projectStatus,
 		})
 		return
 	}
 
-	// Pull changes
+	// Pull changes (gitRepo may be nil when only the projects store is wired)
+	if h.gitRepo == nil {
+		respondSuccess(w, map[string]interface{}{
+			"status":         "ok",
+			"project_status": projectStatus,
+		})
+		return
+	}
+
 	if err := h.gitRepo.Pull(); err != nil {
 		h.logger.Error("Failed to pull changes", zap.Error(err))
 		respondError(w, http.StatusInternalServerError, "PULL_FAILED", err.Error())
@@ -117,7 +152,130 @@ func (h *WebhookHandler) GitHub(w http.ResponseWriter, r *http.Request) {
 
 	h.logger.Info("Webhook sync completed", zap.Bool("success", result.Success))
 
-	respondSuccess(w, result)
+	respondSuccess(w, map[string]interface{}{
+		"success":          result.Success,
+		"pulled_changes":   result.PulledChanges,
+		"project_status":   projectStatus,
+	})
+}
+
+// headSHA returns the SHA of the head commit from a webhook payload.
+// GitHub places the head commit last in the commits array.
+func headSHA(payload models.WebhookPayload) string {
+	if len(payload.Commits) > 0 {
+		return payload.Commits[len(payload.Commits)-1].ID
+	}
+	return ""
+}
+
+// processProjectPush is called for every push to a known Project repo.
+// Creates a preview env if the branch is new and has a .dev/ tree;
+// rebuilds an existing env via the builder runner.
+//
+// Returns a status string for the response body. Errors are logged but
+// not returned to GitHub (which retries on non-2xx and we don't want
+// retries for our async builds).
+func (h *WebhookHandler) processProjectPush(repoURL, ref, sha string) string {
+	if h.projectsStore == nil || h.runner == nil {
+		return "" // not configured (pre-deploy cohabitation)
+	}
+
+	// Strip "refs/heads/" prefix
+	branch := strings.TrimPrefix(ref, "refs/heads/")
+	if branch == ref {
+		return "" // not a branch push (e.g. tag)
+	}
+
+	project, err := h.projectsStore.GetProjectByRepoURL(repoURL)
+	if err != nil {
+		// Unknown repo (legacy or never-onboarded) — silent ignore
+		return ""
+	}
+
+	// Fetch origin so the local clone has the latest commit and ls-tree
+	// can see the new branch tree. Best-effort; continue on failure.
+	fetchCmd := exec.Command("git", "fetch", "origin")
+	fetchCmd.Dir = project.LocalPath
+	if out, err := fetchCmd.CombinedOutput(); err != nil {
+		h.logger.Warn("git fetch failed",
+			zap.String("repo", project.LocalPath),
+			zap.Error(err),
+			zap.String("out", string(out)))
+	}
+
+	slug, err := projects.BranchSlug(branch)
+	if err != nil {
+		h.logger.Warn("invalid branch slug, skipping",
+			zap.String("branch", branch), zap.Error(err))
+		return ""
+	}
+
+	env, err := h.projectsStore.GetEnvironment(project.ID, slug)
+	if err != nil && !errors.Is(err, projects.ErrNotFound) {
+		h.logger.Error("get env failed", zap.Error(err))
+		return ""
+	}
+
+	if env == nil {
+		// New branch — check it has .dev/ in the tree
+		if !devDirExistsForBranch(project.LocalPath, branch) {
+			return "no_dev_dir"
+		}
+
+		now := time.Now().UTC()
+		env = &models.Environment{
+			ID:          project.ID + "--" + slug,
+			ProjectID:   project.ID,
+			Branch:      branch,
+			BranchSlug:  slug,
+			Kind:        models.EnvKindPreview,
+			ComposeFile: ".dev/docker-compose.dev.yml",
+			Status:      models.EnvStatusPending,
+			CreatedAt:   now,
+		}
+		if branch == project.DefaultBranch {
+			env.Kind = models.EnvKindProd
+			env.ComposeFile = ".dev/docker-compose.prod.yml"
+		}
+		env.URL = projects.ComposeURL(project, env, "home")
+		if err := h.projectsStore.SaveEnvironment(env); err != nil {
+			h.logger.Error("save new preview env", zap.Error(err))
+			return ""
+		}
+	}
+
+	// Enqueue + run build in a goroutine so the webhook response is non-blocking.
+	build := &models.Build{
+		ID:          uuid.NewString(),
+		EnvID:       env.ID,
+		TriggeredBy: models.BuildTriggerWebhook,
+		SHA:         sha,
+		StartedAt:   time.Now().UTC(),
+		Status:      models.BuildStatusRunning,
+	}
+	if err := h.projectsStore.SaveBuild(project.ID, build); err != nil {
+		h.logger.Error("save build", zap.Error(err))
+		return ""
+	}
+
+	envCopy := *env     // capture for goroutine
+	buildCopy := *build // capture for goroutine
+	go h.runner.Build(context.Background(), &envCopy, &buildCopy)
+
+	return "build_enqueued:" + build.ID
+}
+
+// devDirExistsForBranch checks if the given branch's tree (in the local
+// clone) contains a `.dev/` directory. Uses git ls-tree so we don't have
+// to check out the branch.
+func devDirExistsForBranch(repoPath, branch string) bool {
+	cmd := exec.Command("git", "ls-tree", "--name-only", "origin/"+branch, ".dev")
+	cmd.Dir = repoPath
+	out, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.TrimSpace(string(out)) != ""
 }
 
 // GitLab handles GitLab webhook events

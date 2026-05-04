@@ -68,6 +68,8 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	logsHandler := handlers.NewLogsHandler(cfg.DockerClient)
 	webhookHandler := handlers.NewWebhookHandler(cfg.GitRepo, cfg.StateManager, cfg.Logger)
 	webhookHandler.SetComposeHandler(composeHandler)
+	webhookHandler.SetProjectsStore(cfg.ProjectsStore)
+	webhookHandler.SetRunner(cfg.Builder)
 	statsHandler := handlers.NewStatsHandler(cfg.DockerClient, cfg.StatsStore, cfg.StatsCollector)
 	execHandler := handlers.NewExecHandler(cfg.DockerClient, cfg.Logger)
 	reposHandler := handlers.NewReposHandler(cfg.ReposManager)
