@@ -1,6 +1,7 @@
 package builder
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"io"
@@ -120,6 +121,46 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 	env.LastBuildID = b.ID
 	env.LastDeployedSHA = b.SHA
 	_ = r.store.SaveEnvironment(env)
+	return nil
+}
+
+// Teardown removes an environment's containers, volumes, and per-env data
+// directory. The Environment row is NOT deleted by this method — caller
+// is responsible. Used by the branch-delete webhook flow.
+func (r *Runner) Teardown(ctx context.Context, env *models.Environment) error {
+	release := r.queue.Acquire(env.ID)
+	defer release()
+
+	env.Status = models.EnvStatusDestroying
+	_ = r.store.SaveEnvironment(env)
+
+	envDir := filepath.Join(r.dataDir, "envs", env.ID)
+	composePath := filepath.Join(envDir, "docker-compose.yaml")
+
+	// If the rendered compose exists, run docker compose down -v to remove
+	// containers + named volumes. If it doesn't exist (env never built),
+	// skip the docker call.
+	if _, err := os.Stat(composePath); err == nil {
+		var stderr bytes.Buffer
+		args := []string{"-f", "docker-compose.yaml", "-p", env.ID, "down", "-v"}
+		if err := r.exec.Compose(ctx, env.ID, envDir, args, io.Discard, &stderr); err != nil {
+			r.logger.Warn("docker compose down failed",
+				zap.String("env_id", env.ID),
+				zap.String("stderr", stderr.String()),
+				zap.Error(err))
+			// continue — we still want to clean up the directories
+		}
+	}
+
+	// Remove env directory and build log directory.
+	if err := os.RemoveAll(envDir); err != nil {
+		r.logger.Warn("rm env dir failed", zap.Error(err))
+	}
+	buildsDir := filepath.Join(r.dataDir, "builds", env.ID)
+	if err := os.RemoveAll(buildsDir); err != nil {
+		r.logger.Warn("rm builds dir failed", zap.Error(err))
+	}
+
 	return nil
 }
 

@@ -118,6 +118,58 @@ func TestRunner_BuildSuccess(t *testing.T) {
 	}
 }
 
+func TestRunner_Teardown(t *testing.T) {
+	r, store, _, env, dataDir, exec := newRunnerTest(t)
+	// Pretend a previous build happened — render a compose file.
+	envDir := filepath.Join(dataDir, "envs", env.ID)
+	if err := os.MkdirAll(envDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(envDir, "docker-compose.yaml"),
+		[]byte("services: {}\n"), 0644); err != nil {
+		t.Fatal(err)
+	}
+	buildsDir := filepath.Join(dataDir, "builds", env.ID)
+	if err := os.MkdirAll(buildsDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.Teardown(context.Background(), env); err != nil {
+		t.Fatalf("Teardown: %v", err)
+	}
+	if exec.calls != 1 {
+		t.Errorf("exec calls = %d, want 1 (down)", exec.calls)
+	}
+	if _, err := os.Stat(envDir); !os.IsNotExist(err) {
+		t.Errorf("env dir still exists")
+	}
+	if _, err := os.Stat(buildsDir); !os.IsNotExist(err) {
+		t.Errorf("builds dir still exists")
+	}
+	// Note: the Environment row itself is NOT deleted by Teardown;
+	// caller (webhook handler) does that.
+	_ = store
+}
+
+func TestRunner_Teardown_NeverBuilt(t *testing.T) {
+	r, _, _, env, dataDir, exec := newRunnerTest(t)
+	// No compose file — env was never built.
+	envDir := filepath.Join(dataDir, "envs", env.ID)
+	// envDir does not exist at all.
+
+	if err := r.Teardown(context.Background(), env); err != nil {
+		t.Fatalf("Teardown (never built): %v", err)
+	}
+	// No compose file → no docker call.
+	if exec.calls != 0 {
+		t.Errorf("exec calls = %d, want 0 (no compose file)", exec.calls)
+	}
+	// Dirs should not exist (and removal of non-existent dir is fine).
+	if _, err := os.Stat(envDir); !os.IsNotExist(err) {
+		t.Errorf("env dir should not exist")
+	}
+}
+
 func TestRunner_BuildFailure(t *testing.T) {
 	r, store, _, env, _, exec := newRunnerTest(t)
 	exec.exitErr = errors.New("docker exited with 1")

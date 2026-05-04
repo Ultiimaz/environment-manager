@@ -3,6 +3,7 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -236,4 +237,109 @@ func TestWebhook_NoPushForNilStoreOrRunner_IsNoop(t *testing.T) {
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
+}
+
+// TestWebhook_BranchDelete_TearsDownPreview verifies that a delete event for
+// a preview branch tears down the matching Environment.
+func TestWebhook_BranchDelete_TearsDownPreview(t *testing.T) {
+	store, runner, project := makeProjectFixture(t)
+
+	// Add a preview env for "feature/x"
+	previewEnv := &models.Environment{
+		ID:          "p1--feature-x",
+		ProjectID:   "p1",
+		Branch:      "feature/x",
+		BranchSlug:  "feature-x",
+		Kind:        models.EnvKindPreview,
+		ComposeFile: ".dev/docker-compose.dev.yml",
+		Status:      models.EnvStatusRunning,
+	}
+	if err := store.SaveEnvironment(previewEnv); err != nil {
+		t.Fatal(err)
+	}
+
+	h := newWebhookV2Handler(store, runner)
+
+	payload := map[string]any{
+		"ref":      "feature/x",
+		"ref_type": "branch",
+		"repository": map[string]any{"clone_url": project.RepoURL},
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/api/v1/webhook/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "delete")
+	rec := httptest.NewRecorder()
+	h.GitHub(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d; body=%s", rec.Code, rec.Body.String())
+	}
+
+	// Wait for teardown goroutine to delete the env row.
+	deadline := time.After(2 * time.Second)
+	for {
+		if _, err := store.GetEnvironment(project.ID, "feature-x"); errors.Is(err, projects.ErrNotFound) {
+			return // success
+		}
+		select {
+		case <-deadline:
+			t.Fatal("env not torn down within deadline")
+		case <-time.After(50 * time.Millisecond):
+		}
+	}
+}
+
+// TestWebhook_BranchDelete_ProdExempt verifies that delete events for a prod
+// branch (main) do not tear down the prod Environment.
+func TestWebhook_BranchDelete_ProdExempt(t *testing.T) {
+	store, runner, project := makeProjectFixture(t)
+
+	h := newWebhookV2Handler(store, runner)
+
+	payload := map[string]any{
+		"ref":      "main",
+		"ref_type": "branch",
+		"repository": map[string]any{"clone_url": project.RepoURL},
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/api/v1/webhook/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "delete")
+	rec := httptest.NewRecorder()
+	h.GitHub(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	// prod env should still exist
+	if _, err := store.GetEnvironment(project.ID, "main"); err != nil {
+		t.Fatalf("prod env was torn down (should be exempt): %v", err)
+	}
+}
+
+// TestWebhook_BranchDelete_TagIgnored verifies that delete events for tags
+// (ref_type=tag) are silently ignored.
+func TestWebhook_BranchDelete_TagIgnored(t *testing.T) {
+	store, runner, project := makeProjectFixture(t)
+
+	h := newWebhookV2Handler(store, runner)
+
+	payload := map[string]any{
+		"ref":      "v1.0.0",
+		"ref_type": "tag",
+		"repository": map[string]any{"clone_url": project.RepoURL},
+	}
+	body, _ := json.Marshal(payload)
+	req := httptest.NewRequest("POST", "/api/v1/webhook/github", bytes.NewReader(body))
+	req.Header.Set("X-GitHub-Event", "delete")
+	rec := httptest.NewRecorder()
+	h.GitHub(rec, req)
+
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	// prod env must still exist
+	if _, err := store.GetEnvironment(project.ID, "main"); err != nil {
+		t.Fatalf("prod env unexpectedly missing: %v", err)
+	}
+	_ = project
 }
