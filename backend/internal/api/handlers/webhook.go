@@ -59,6 +59,13 @@ func (h *WebhookHandler) SetRunner(r *builder.Runner) { h.runner = r }
 
 // GitHub handles GitHub webhook events
 func (h *WebhookHandler) GitHub(w http.ResponseWriter, r *http.Request) {
+	event := r.Header.Get("X-GitHub-Event")
+
+	if event == "delete" {
+		h.handleDelete(w, r)
+		return
+	}
+
 	var payload models.WebhookPayload
 	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 		respondError(w, http.StatusBadRequest, "INVALID_PAYLOAD", err.Error())
@@ -157,6 +164,73 @@ func (h *WebhookHandler) GitHub(w http.ResponseWriter, r *http.Request) {
 		"pulled_changes":   result.PulledChanges,
 		"project_status":   projectStatus,
 	})
+}
+
+// handleDelete processes GitHub `delete` events (branch deletion). Tears
+// down the matching Environment. Prod envs are exempt — they're only
+// removed via project deletion (out of scope for step 6).
+func (h *WebhookHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
+	var payload struct {
+		Ref     string `json:"ref"`      // bare branch name, not refs/heads/...
+		RefType string `json:"ref_type"` // "branch" or "tag"
+		Repository struct {
+			CloneURL string `json:"clone_url"`
+		} `json:"repository"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+		respondError(w, http.StatusBadRequest, "INVALID_PAYLOAD", err.Error())
+		return
+	}
+
+	if payload.RefType != "branch" {
+		respondSuccess(w, map[string]string{"status": "ignored", "reason": "not branch"})
+		return
+	}
+
+	if h.projectsStore == nil || h.runner == nil {
+		respondSuccess(w, map[string]string{"status": "ignored", "reason": "projects not configured"})
+		return
+	}
+
+	project, err := h.projectsStore.GetProjectByRepoURL(payload.Repository.CloneURL)
+	if err != nil {
+		respondSuccess(w, map[string]string{"status": "ignored", "reason": "unknown repo"})
+		return
+	}
+
+	slug, err := projects.BranchSlug(payload.Ref)
+	if err != nil {
+		respondSuccess(w, map[string]string{"status": "ignored", "reason": "invalid slug"})
+		return
+	}
+
+	env, err := h.projectsStore.GetEnvironment(project.ID, slug)
+	if err != nil {
+		if errors.Is(err, projects.ErrNotFound) {
+			respondSuccess(w, map[string]string{"status": "ignored", "reason": "no matching env"})
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "STORE_ERROR", err.Error())
+		return
+	}
+
+	if env.Kind == models.EnvKindProd {
+		respondSuccess(w, map[string]string{"status": "ignored", "reason": "prod env exempt from auto-teardown"})
+		return
+	}
+
+	// Tear down asynchronously so GitHub gets a fast response.
+	go func() {
+		if err := h.runner.Teardown(context.Background(), env); err != nil {
+			h.logger.Error("teardown failed", zap.String("env_id", env.ID), zap.Error(err))
+			return
+		}
+		if err := h.projectsStore.DeleteEnvironment(project.ID, slug); err != nil {
+			h.logger.Error("delete env row failed", zap.String("env_id", env.ID), zap.Error(err))
+		}
+	}()
+
+	respondSuccess(w, map[string]string{"status": "teardown_started", "env_id": env.ID})
 }
 
 // headSHA returns the SHA of the head commit from a webhook payload.
