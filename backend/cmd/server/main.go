@@ -103,7 +103,7 @@ func main() {
 	} else {
 		logger.Info("Legacy projects migration complete")
 	}
-	_ = projectsStore // wired into router in a later step
+	// projectsStore is now wired into the router below
 
 	// Initialize subdomain registry and proxy manager
 	subdomainRegistry, err := proxy.NewRegistry(cfg.DataDir + "/subdomains.yaml")
@@ -134,6 +134,7 @@ func main() {
 		StatsStore:      statsStore,
 		StatsCollector:  statsCollector,
 		ReposManager:    reposManager,
+		ProjectsStore:   projectsStore,
 		ProxyManager:    proxyManager,
 		StaticDir:       cfg.StaticDir,
 		DataDir:         cfg.DataDir,

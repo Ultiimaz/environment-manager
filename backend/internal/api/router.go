@@ -13,6 +13,7 @@ import (
 	"github.com/environment-manager/backend/internal/config"
 	"github.com/environment-manager/backend/internal/docker"
 	"github.com/environment-manager/backend/internal/git"
+	"github.com/environment-manager/backend/internal/projects"
 	"github.com/environment-manager/backend/internal/proxy"
 	"github.com/environment-manager/backend/internal/repos"
 	"github.com/environment-manager/backend/internal/state"
@@ -30,6 +31,7 @@ type RouterConfig struct {
 	StatsStore      *stats.Store
 	StatsCollector  *stats.Collector
 	ReposManager    *repos.Manager
+	ProjectsStore   *projects.Store
 	ProxyManager    *proxy.Manager
 	StaticDir       string
 	DataDir         string
@@ -67,6 +69,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	statsHandler := handlers.NewStatsHandler(cfg.DockerClient, cfg.StatsStore, cfg.StatsCollector)
 	execHandler := handlers.NewExecHandler(cfg.DockerClient, cfg.Logger)
 	reposHandler := handlers.NewReposHandler(cfg.ReposManager)
+	projectsHandler := handlers.NewProjectsHandler(cfg.ProjectsStore, cfg.ReposManager, cfg.BaseDomain, cfg.Logger)
 	githubHandler := handlers.NewGitHubHandler(cfg.ReposManager.Credentials(), cfg.Logger)
 
 	// API routes
@@ -147,6 +150,13 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Get("/{id}/files", reposHandler.GetFiles)
 			r.Get("/{id}/compose", reposHandler.GetComposeFiles)
 			r.Get("/{id}/content", reposHandler.GetFileContent)
+		})
+
+		// Projects (.dev/-based deploys; coexists with /repos until step 10)
+		r.Route("/projects", func(r chi.Router) {
+			r.Get("/", projectsHandler.List)
+			r.Post("/", projectsHandler.Create)
+			r.Get("/{id}", projectsHandler.Get)
 		})
 
 		// GitHub integration (single provider-wide PAT)
