@@ -11,6 +11,7 @@ import (
 
 	"github.com/environment-manager/backend/internal/api"
 	"github.com/environment-manager/backend/internal/backup"
+	"github.com/environment-manager/backend/internal/builder"
 	"github.com/environment-manager/backend/internal/config"
 	"github.com/environment-manager/backend/internal/credentials"
 	"github.com/environment-manager/backend/internal/docker"
@@ -105,6 +106,16 @@ func main() {
 	}
 	// projectsStore is now wired into the router below
 
+	if reconciled, err := projects.MarkStuckBuildsFailed(projectsStore); err != nil {
+		logger.Error("Failed to reconcile stuck builds", zap.Error(err))
+	} else if reconciled > 0 {
+		logger.Info("Marked stuck builds as failed", zap.Int("count", reconciled))
+	}
+
+	buildQueue := builder.NewQueue()
+	buildExec := builder.DockerComposeExecutor{}
+	buildRunner := builder.NewRunner(projectsStore, buildExec, cfg.DataDir, buildQueue, logger)
+
 	// Initialize subdomain registry and proxy manager
 	subdomainRegistry, err := proxy.NewRegistry(cfg.DataDir + "/subdomains.yaml")
 	if err != nil {
@@ -135,6 +146,7 @@ func main() {
 		StatsCollector:  statsCollector,
 		ReposManager:    reposManager,
 		ProjectsStore:   projectsStore,
+		Builder:         buildRunner,
 		ProxyManager:    proxyManager,
 		StaticDir:       cfg.StaticDir,
 		DataDir:         cfg.DataDir,

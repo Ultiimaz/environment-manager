@@ -24,7 +24,16 @@ After rollout:
 - [ ] Legacy `/api/v1/repos` and `/api/v1/compose` still work unchanged
 
 ## Step 3 — Builder + log streaming
-*(populated when step 3 plan is written)*
+
+After rollout:
+- [ ] `POST /api/v1/envs/{id}/build` returns 202 with `data.build_id`
+- [ ] Build runs asynchronously: container appears under `docker ps` shortly after for a successful build
+- [ ] WS `/ws/envs/{id}/build-logs` streams output during build, closes on completion
+- [ ] Build success flips env to `Status: running`, sets `LastBuildID` and `LastDeployedSHA`
+- [ ] Build failure flips env to `Status: failed` (prior containers, if any, untouched)
+- [ ] Restart env-manager mid-build: stuck `running` builds reconciled to `failed` (check log for "Marked stuck builds as failed")
+- [ ] No regression: legacy `/api/v1/repos` and `/api/v1/compose` still work
+- [ ] Routable URL is **not** yet wired (Traefik labels deferred to step 4); container is running on its bridge but not externally accessible
 
 ## Step 4 — DB provisioning
 *(populated when step 4 plan is written)*
