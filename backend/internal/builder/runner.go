@@ -38,23 +38,27 @@ func (DockerComposeExecutor) Compose(ctx context.Context, projectName, workdir s
 // Runner builds an Environment: render compose, run `up -d --build`,
 // update Store with results.
 type Runner struct {
-	store   *projects.Store
-	exec    ComposeExecutor
-	dataDir string
-	queue   *Queue
-	logger  *zap.Logger
-	logRing int // ring buffer size for buildlog.Log
+	store        *projects.Store
+	exec         ComposeExecutor
+	dataDir      string
+	proxyNetwork string
+	queue        *Queue
+	logger       *zap.Logger
+	logRing      int // ring buffer size for buildlog.Log
 }
 
-// NewRunner constructs a Runner.
-func NewRunner(store *projects.Store, exec ComposeExecutor, dataDir string, queue *Queue, logger *zap.Logger) *Runner {
+// NewRunner constructs a Runner. proxyNetwork is the name of the external
+// Docker network Traefik listens on (e.g. "my-macvlan-net"). Pass "" to
+// disable Traefik label injection (useful in tests).
+func NewRunner(store *projects.Store, exec ComposeExecutor, dataDir string, proxyNetwork string, queue *Queue, logger *zap.Logger) *Runner {
 	return &Runner{
-		store:   store,
-		exec:    exec,
-		dataDir: dataDir,
-		queue:   queue,
-		logger:  logger,
-		logRing: 64 * 1024,
+		store:        store,
+		exec:         exec,
+		dataDir:      dataDir,
+		proxyNetwork: proxyNetwork,
+		queue:        queue,
+		logger:       logger,
+		logRing:      64 * 1024,
 	}
 }
 
@@ -92,6 +96,13 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 	if err := RenderCompose(srcPath, envDir, project, env); err != nil {
 		_, _ = log.Write([]byte("ERROR: " + err.Error() + "\n"))
 		return r.fail(env, b, "render compose: "+err.Error())
+	}
+
+	composePath := filepath.Join(envDir, "docker-compose.yaml")
+	_, _ = log.Write([]byte("==> injecting traefik labels\n"))
+	if err := InjectTraefikLabels(composePath, env, project.Expose, r.proxyNetwork); err != nil {
+		_, _ = log.Write([]byte("ERROR: " + err.Error() + "\n"))
+		return r.fail(env, b, "inject traefik labels: "+err.Error())
 	}
 
 	_, _ = log.Write([]byte("==> docker compose up -d --build\n"))
