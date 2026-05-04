@@ -203,3 +203,78 @@ func (s *Store) DeleteEnvironment(projectID, branchSlug string) error {
 	}
 	return os.Remove(path)
 }
+
+func (s *Store) buildPath(projectID, buildID string) string {
+	return filepath.Join(s.root, projectID, "builds", buildID+".yaml")
+}
+
+// SaveBuild writes a build record under its project.
+func (s *Store) SaveBuild(projectID string, b *models.Build) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if projectID == "" || b.ID == "" || b.EnvID == "" {
+		return errors.New("build requires projectID, ID, and EnvID")
+	}
+	dir := filepath.Join(s.root, projectID, "builds")
+	if err := os.MkdirAll(dir, 0755); err != nil {
+		return err
+	}
+	data, err := yaml.Marshal(b)
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(s.buildPath(projectID, b.ID), data, 0644)
+}
+
+// GetBuild loads a build by project ID and build ID.
+func (s *Store) GetBuild(projectID, buildID string) (*models.Build, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	data, err := os.ReadFile(s.buildPath(projectID, buildID))
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, ErrNotFound
+		}
+		return nil, err
+	}
+	var b models.Build
+	if err := yaml.Unmarshal(data, &b); err != nil {
+		return nil, err
+	}
+	return &b, nil
+}
+
+// ListBuildsForEnv returns all builds where Build.EnvID == envID.
+func (s *Store) ListBuildsForEnv(projectID, envID string) ([]*models.Build, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+
+	dir := filepath.Join(s.root, projectID, "builds")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil, nil
+		}
+		return nil, err
+	}
+	var out []*models.Build
+	for _, e := range entries {
+		if e.IsDir() || filepath.Ext(e.Name()) != ".yaml" {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(dir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var b models.Build
+		if err := yaml.Unmarshal(data, &b); err != nil {
+			continue
+		}
+		if b.EnvID == envID {
+			out = append(out, &b)
+		}
+	}
+	return out, nil
+}

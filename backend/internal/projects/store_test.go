@@ -166,3 +166,50 @@ func TestStore_DeleteEnvironment(t *testing.T) {
 		t.Fatal("expected ErrNotFound after delete")
 	}
 }
+
+func TestStore_BuildRoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	p := &models.Project{ID: "p1", Name: "p", Status: models.ProjectStatusActive}
+	_ = s.SaveProject(p)
+	b := &models.Build{
+		ID:          "build-1",
+		EnvID:       "p1--main",
+		TriggeredBy: models.BuildTriggerWebhook,
+		SHA:         "abc123",
+		StartedAt:   time.Now().UTC().Truncate(time.Second),
+		Status:      models.BuildStatusRunning,
+	}
+	if err := s.SaveBuild(p.ID, b); err != nil {
+		t.Fatalf("SaveBuild: %v", err)
+	}
+	got, err := s.GetBuild(p.ID, b.ID)
+	if err != nil {
+		t.Fatalf("GetBuild: %v", err)
+	}
+	if got.SHA != b.SHA || got.Status != b.Status {
+		t.Fatalf("build round-trip mismatch")
+	}
+}
+
+func TestStore_ListBuildsForEnv(t *testing.T) {
+	s := newTestStore(t)
+	p := &models.Project{ID: "p1", Name: "p", Status: models.ProjectStatusActive}
+	_ = s.SaveProject(p)
+	for i := 0; i < 3; i++ {
+		_ = s.SaveBuild(p.ID, &models.Build{
+			ID: "b" + string(rune('0'+i)), EnvID: "p1--main",
+			Status: models.BuildStatusSuccess,
+		})
+	}
+	_ = s.SaveBuild(p.ID, &models.Build{
+		ID: "other", EnvID: "p1--feature-x",
+		Status: models.BuildStatusSuccess,
+	})
+	list, err := s.ListBuildsForEnv(p.ID, "p1--main")
+	if err != nil {
+		t.Fatalf("ListBuildsForEnv: %v", err)
+	}
+	if len(list) != 3 {
+		t.Fatalf("expected 3 builds for p1--main, got %d", len(list))
+	}
+}
