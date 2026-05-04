@@ -461,12 +461,15 @@ func (m *Manager) generateID(url string) string {
 	return hex.EncodeToString(hash[:8])
 }
 
-func (m *Manager) extractRepoName(url string) string {
+func (m *Manager) extractRepoName(rawURL string) string {
 	// Handle various URL formats
-	url = strings.TrimSuffix(url, ".git")
+	rawURL = strings.TrimSuffix(rawURL, ".git")
+	rawURL = strings.TrimRight(rawURL, `/\`)
 
-	// Get last part of URL
-	parts := strings.Split(url, "/")
+	// Split on both forward and backward slashes to handle Windows local paths.
+	parts := strings.FieldsFunc(rawURL, func(r rune) bool {
+		return r == '/' || r == '\\'
+	})
 	if len(parts) > 0 {
 		return parts[len(parts)-1]
 	}
