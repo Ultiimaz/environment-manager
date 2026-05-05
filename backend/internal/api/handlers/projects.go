@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/environment-manager/backend/internal/credentials"
 	"github.com/environment-manager/backend/internal/models"
 	"github.com/environment-manager/backend/internal/projects"
 	"github.com/environment-manager/backend/internal/repos"
@@ -26,6 +27,7 @@ import (
 type ProjectsHandler struct {
 	store        *projects.Store
 	reposManager *repos.Manager
+	credStore    *credentials.Store
 	logger       *zap.Logger
 	baseDomain   string
 }
@@ -33,13 +35,14 @@ type ProjectsHandler struct {
 // NewProjectsHandler wires the dependencies. baseDomain is the fallback
 // (e.g. "home") used by ComposeURL when ExternalDomain is unset; pass an
 // empty string to fall back to the literal "home" default.
-func NewProjectsHandler(store *projects.Store, reposManager *repos.Manager, baseDomain string, logger *zap.Logger) *ProjectsHandler {
+func NewProjectsHandler(store *projects.Store, reposManager *repos.Manager, credStore *credentials.Store, baseDomain string, logger *zap.Logger) *ProjectsHandler {
 	if baseDomain == "" {
 		baseDomain = "home"
 	}
 	return &ProjectsHandler{
 		store:        store,
 		reposManager: reposManager,
+		credStore:    credStore,
 		logger:       logger,
 		baseDomain:   baseDomain,
 	}
@@ -253,4 +256,105 @@ func (h *ProjectsHandler) Get(w http.ResponseWriter, r *http.Request) {
 	}
 	w.Header().Set("Content-Type", "application/json")
 	_ = json.NewEncoder(w).Encode(ProjectDetail{Project: p, Environments: envs})
+}
+
+// ListSecrets handles GET /api/v1/projects/{id}/secrets — returns key names only.
+func (h *ProjectsHandler) ListSecrets(w http.ResponseWriter, r *http.Request) {
+	id := h.urlID(r)
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "MISSING_ID", "id is required")
+		return
+	}
+	if _, err := h.store.GetProject(id); err != nil {
+		if errors.Is(err, projects.ErrNotFound) {
+			respondError(w, http.StatusNotFound, "NOT_FOUND", "project not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "STORE_ERROR", err.Error())
+		return
+	}
+	if h.credStore == nil {
+		respondError(w, http.StatusInternalServerError, "NO_CREDENTIAL_STORE", "credential store not configured (set CREDENTIAL_KEY)")
+		return
+	}
+	keys, err := h.credStore.ListProjectSecretKeys(id)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "STORE_ERROR", err.Error())
+		return
+	}
+	if keys == nil {
+		keys = []string{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string][]string{"keys": keys})
+}
+
+// SetSecrets handles PUT /api/v1/projects/{id}/secrets with body {KEY: "value", ...}.
+// Sets each key=value; existing values for the same key are overwritten.
+func (h *ProjectsHandler) SetSecrets(w http.ResponseWriter, r *http.Request) {
+	id := h.urlID(r)
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "MISSING_ID", "id is required")
+		return
+	}
+	if _, err := h.store.GetProject(id); err != nil {
+		if errors.Is(err, projects.ErrNotFound) {
+			respondError(w, http.StatusNotFound, "NOT_FOUND", "project not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "STORE_ERROR", err.Error())
+		return
+	}
+	if h.credStore == nil {
+		respondError(w, http.StatusInternalServerError, "NO_CREDENTIAL_STORE", "credential store not configured")
+		return
+	}
+	var body map[string]string
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		respondError(w, http.StatusBadRequest, "INVALID_BODY", err.Error())
+		return
+	}
+	var saved []string
+	for k, v := range body {
+		if k == "" {
+			continue
+		}
+		if err := h.credStore.SaveProjectSecret(id, k, v); err != nil {
+			respondError(w, http.StatusInternalServerError, "STORE_ERROR", err.Error())
+			return
+		}
+		saved = append(saved, k)
+	}
+	h.logger.Info("secrets updated",
+		zap.String("project_id", id),
+		zap.Int("count", len(saved)),
+	)
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"saved_keys": saved,
+		"count":      len(saved),
+	})
+}
+
+// DeleteSecret handles DELETE /api/v1/projects/{id}/secrets/{key}.
+func (h *ProjectsHandler) DeleteSecret(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	key := chi.URLParam(r, "key")
+	if id == "" || key == "" {
+		respondError(w, http.StatusBadRequest, "MISSING_PARAM", "id and key required")
+		return
+	}
+	if h.credStore == nil {
+		respondError(w, http.StatusInternalServerError, "NO_CREDENTIAL_STORE", "credential store not configured")
+		return
+	}
+	if err := h.credStore.DeleteProjectSecret(id, key); err != nil {
+		if errors.Is(err, credentials.ErrNotFound) {
+			respondError(w, http.StatusNotFound, "NOT_FOUND", "secret not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "STORE_ERROR", err.Error())
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
 }

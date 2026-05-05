@@ -34,7 +34,7 @@ func makeProjectFixture(t *testing.T) (*projects.Store, *builder.Runner, *models
 		t.Fatal(err)
 	}
 	queue := builder.NewQueue()
-	runner := builder.NewRunner(store, fakeExec{}, dataDir, "", queue, zap.NewNop())
+	runner := builder.NewRunner(store, fakeExec{}, dataDir, "", queue, zap.NewNop(), nil)
 
 	// Create an "upstream" bare repo that the local clone will treat as origin.
 	upstreamDir := filepath.Join(dataDir, "upstream.git")

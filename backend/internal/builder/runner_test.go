@@ -6,10 +6,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"go.uber.org/zap"
 
+	"github.com/environment-manager/backend/internal/credentials"
 	"github.com/environment-manager/backend/internal/models"
 	"github.com/environment-manager/backend/internal/projects"
 )
@@ -81,7 +83,7 @@ func newRunnerTest(t *testing.T) (*Runner, *projects.Store, *models.Project, *mo
 	}
 
 	exec := &fakeExecutor{output: "Step 1/3 : FROM alpine\n"}
-	r := NewRunner(store, exec, dataDir, "", NewQueue(), zap.NewNop())
+	r := NewRunner(store, exec, dataDir, "", NewQueue(), zap.NewNop(), nil)
 	return r, store, project, env, dataDir, exec
 }
 
@@ -167,6 +169,80 @@ func TestRunner_Teardown_NeverBuilt(t *testing.T) {
 	// Dirs should not exist (and removal of non-existent dir is fine).
 	if _, err := os.Stat(envDir); !os.IsNotExist(err) {
 		t.Errorf("env dir should not exist")
+	}
+}
+
+func TestRunner_SecretInjection(t *testing.T) {
+	dataDir := t.TempDir()
+	store, err := projects.NewStore(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoDir := filepath.Join(dataDir, "repos", "myapp")
+	devDir := filepath.Join(repoDir, ".dev")
+	if err := writeFiles(devDir, map[string]string{
+		"docker-compose.prod.yml": "services:\n  app:\n    image: hello-world\n",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	project := &models.Project{
+		ID: "p1", Name: "myapp", LocalPath: repoDir, DefaultBranch: "main",
+		Status: models.ProjectStatusActive,
+	}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+	env := &models.Environment{
+		ID: "p1--main", ProjectID: "p1",
+		Branch: "main", BranchSlug: "main", Kind: models.EnvKindProd,
+		ComposeFile: ".dev/docker-compose.prod.yml",
+		Status:      models.EnvStatusPending,
+		URL:         "myapp.home",
+	}
+	if err := store.SaveEnvironment(env); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set up a real credential store with a test key.
+	credKey := make([]byte, 32)
+	for i := range credKey {
+		credKey[i] = byte(i + 1)
+	}
+	credStore, err := credentials.NewStore(filepath.Join(dataDir, "creds.json"), credKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = credStore.SaveProjectSecret("p1", "STRIPE_KEY", "sk_test_abc")
+	_ = credStore.SaveProjectSecret("p1", "DB_PASSWORD", "s3cr3t")
+
+	exec := &fakeExecutor{output: "Step 1/3 : FROM alpine\n"}
+	r := NewRunner(store, exec, dataDir, "", NewQueue(), zap.NewNop(), credStore)
+
+	build := &models.Build{
+		ID: "b1", EnvID: env.ID, SHA: "abc",
+		TriggeredBy: models.BuildTriggerManual,
+		Status:      models.BuildStatusRunning,
+	}
+	if err := store.SaveBuild("p1", build); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := r.Build(context.Background(), env, build); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	// The .env file should have been written to the project's local path.
+	envPath := filepath.Join(repoDir, ".env")
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf(".env not written: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "DB_PASSWORD=s3cr3t") {
+		t.Errorf(".env missing DB_PASSWORD; got:\n%s", content)
+	}
+	if !strings.Contains(content, "STRIPE_KEY=sk_test_abc") {
+		t.Errorf(".env missing STRIPE_KEY; got:\n%s", content)
 	}
 }
 

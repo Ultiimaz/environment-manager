@@ -29,7 +29,8 @@ type Store struct {
 
 // credentials is the internal structure stored on disk
 type credentials struct {
-	Tokens map[string]string `json:"tokens"` // URL -> encrypted token
+	Tokens         map[string]string            `json:"tokens"`                    // URL -> encrypted token
+	ProjectSecrets map[string]map[string]string `json:"project_secrets,omitempty"` // project_id -> { key -> encrypted_value }
 }
 
 // NewStore creates a new credential store
@@ -163,6 +164,132 @@ func (s *Store) HasGlobalToken(provider string) bool {
 // DeleteGlobalToken removes the provider-wide token.
 func (s *Store) DeleteGlobalToken(provider string) error {
 	return s.DeleteToken(globalKey(provider))
+}
+
+// SaveProjectSecret encrypts and stores a secret for a project.
+// Existing values for the same key are overwritten.
+func (s *Store) SaveProjectSecret(projectID, key, value string) error {
+	if s.key == nil {
+		return ErrNoKey
+	}
+	if projectID == "" || key == "" {
+		return errors.New("projectID and key required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	creds, err := s.load()
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if creds == nil {
+		creds = &credentials{}
+	}
+	if creds.Tokens == nil {
+		creds.Tokens = make(map[string]string)
+	}
+	if creds.ProjectSecrets == nil {
+		creds.ProjectSecrets = make(map[string]map[string]string)
+	}
+	if creds.ProjectSecrets[projectID] == nil {
+		creds.ProjectSecrets[projectID] = make(map[string]string)
+	}
+	encrypted, err := s.encrypt(value)
+	if err != nil {
+		return err
+	}
+	creds.ProjectSecrets[projectID][key] = encrypted
+	return s.save(creds)
+}
+
+// GetProjectSecret returns the decrypted value for a project's secret.
+func (s *Store) GetProjectSecret(projectID, key string) (string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	creds, err := s.load()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	if creds == nil || creds.ProjectSecrets == nil {
+		return "", ErrNotFound
+	}
+	enc, ok := creds.ProjectSecrets[projectID][key]
+	if !ok {
+		return "", ErrNotFound
+	}
+	return s.decrypt(enc)
+}
+
+// ListProjectSecretKeys returns the key names (NOT values) for a project.
+// Order is not guaranteed.
+func (s *Store) ListProjectSecretKeys(projectID string) ([]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	creds, err := s.load()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return []string{}, nil
+		}
+		return nil, err
+	}
+	if creds == nil || creds.ProjectSecrets == nil || creds.ProjectSecrets[projectID] == nil {
+		return []string{}, nil
+	}
+	out := make([]string, 0, len(creds.ProjectSecrets[projectID]))
+	for k := range creds.ProjectSecrets[projectID] {
+		out = append(out, k)
+	}
+	return out, nil
+}
+
+// GetProjectSecrets returns ALL decrypted secrets for a project.
+// Used by the build runner to write a .env file.
+func (s *Store) GetProjectSecrets(projectID string) (map[string]string, error) {
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	creds, err := s.load()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return map[string]string{}, nil
+		}
+		return nil, err
+	}
+	if creds == nil || creds.ProjectSecrets == nil || creds.ProjectSecrets[projectID] == nil {
+		return map[string]string{}, nil
+	}
+	out := make(map[string]string, len(creds.ProjectSecrets[projectID]))
+	for k, enc := range creds.ProjectSecrets[projectID] {
+		v, err := s.decrypt(enc)
+		if err != nil {
+			return nil, err
+		}
+		out[k] = v
+	}
+	return out, nil
+}
+
+// DeleteProjectSecret removes a secret. Returns ErrNotFound if absent.
+func (s *Store) DeleteProjectSecret(projectID, key string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	creds, err := s.load()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return ErrNotFound
+		}
+		return err
+	}
+	if creds == nil || creds.ProjectSecrets == nil || creds.ProjectSecrets[projectID] == nil {
+		return ErrNotFound
+	}
+	if _, ok := creds.ProjectSecrets[projectID][key]; !ok {
+		return ErrNotFound
+	}
+	delete(creds.ProjectSecrets[projectID], key)
+	return s.save(creds)
 }
 
 // load reads credentials from disk
