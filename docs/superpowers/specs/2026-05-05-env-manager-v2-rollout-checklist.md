@@ -21,8 +21,22 @@ After merge:
 - [ ] No new direct callers of `iac.Parse` outside the test file (this is a library plan; wiring is Plans 3-5)
 - [ ] `internal/projects/devconfig.go` still exists and is still the active config parser (will be removed when its last caller migrates)
 
-## Plan 3 — Service plane (Postgres + Redis)
-*(populated when plan 3 is written)*
+## Plan 3a — Service plane bootstrap (Postgres + Redis singletons)
+
+After merge + redeploy:
+- [ ] env-manager startup logs show `Service-plane: paas-postgres ready` AND `Service-plane: paas-redis ready`
+- [ ] `docker network inspect paas-net` shows the bridge network exists
+- [ ] `docker ps --filter name=paas-postgres` shows the container running on `paas-net`, image `postgres:16`, with volume `paas_postgres_data` mounted
+- [ ] `docker ps --filter name=paas-redis` shows the container running on `paas-net`, image `redis:7`, with volume `paas_redis_data` mounted
+- [ ] `docker exec paas-postgres pg_isready -U postgres` exits 0
+- [ ] `docker exec paas-redis redis-cli -a $(superuser_pw_from_store) ping` returns `PONG`
+- [ ] `cat /data/compose/16/data/.credentials/store.json | python3 -m json.tool` shows `system_secrets` with keys `system:paas-postgres:superuser` and `system:paas-redis:superuser` (encrypted blobs)
+- [ ] Restarting env-manager (`docker restart env-manager`) is a no-op — logs show "ready" without recreating containers; superuser passwords reused from cred-store
+- [ ] `cd backend && go test ./...` passes locally
+- [ ] No regression: stripe-payments builds still trigger via webhook; existing envs still serve
+
+## Plan 3b — Per-env DB/ACL provisioning + URL injection
+*(populated when plan 3b is written)*
 
 ## Plan 4 — Pre/post-deploy hooks
 *(populated when plan 4 is written)*
