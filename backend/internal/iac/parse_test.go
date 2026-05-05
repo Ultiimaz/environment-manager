@@ -304,3 +304,78 @@ domains:
 		})
 	}
 }
+
+func TestParse_ServicesBlock(t *testing.T) {
+	cases := []struct {
+		name string
+		yaml string
+		want Services
+	}{
+		{
+			"both enabled",
+			`project_name: app
+expose:
+  service: app
+  port: 80
+services:
+  postgres: true
+  redis: true
+`,
+			Services{Postgres: true, Redis: true},
+		},
+		{
+			"postgres only",
+			`project_name: app
+expose:
+  service: app
+  port: 80
+services:
+  postgres: true
+`,
+			Services{Postgres: true, Redis: false},
+		},
+		{
+			"redis only",
+			`project_name: app
+expose:
+  service: app
+  port: 80
+services:
+  redis: true
+`,
+			Services{Postgres: false, Redis: true},
+		},
+		{
+			"both omitted (services key missing)",
+			`project_name: app
+expose:
+  service: app
+  port: 80
+`,
+			Services{},
+		},
+		{
+			"both explicitly false",
+			`project_name: app
+expose:
+  service: app
+  port: 80
+services:
+  postgres: false
+  redis: false
+`,
+			Services{},
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			got, err := Parse([]byte(tc.yaml))
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if got.Services != tc.want {
+				t.Fatalf("got %+v want %+v", got.Services, tc.want)
+			}
+		})
+	}
+}
