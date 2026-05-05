@@ -384,6 +384,51 @@ func TestEnsureEnvDatabase_UnknownPsqlError(t *testing.T) {
 	}
 }
 
+func TestDropEnvDatabase_DropsBoth(t *testing.T) {
+	fd := &fakeDocker{
+		statuses: map[string]containerState{
+			ContainerName: {exists: true, running: true},
+		},
+		execResults: []execResult{{exitCode: 0}}, // both DROPs succeed
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	p := newTestProvisioner(t, fd, fc)
+
+	if err := p.DropEnvDatabase(context.Background(), "stripe-payments", "main"); err != nil {
+		t.Fatalf("DropEnvDatabase: %v", err)
+	}
+	psqlCalls := filterPsqlCalls(fd.execCalls)
+	if len(psqlCalls) != 2 {
+		t.Fatalf("expected 2 psql calls, got %d: %+v", len(psqlCalls), psqlCalls)
+	}
+	if !contains(psqlCalls[0].cmd, "DROP DATABASE IF EXISTS \"stripepayments_main\"") {
+		t.Errorf("first should DROP DATABASE, got %v", psqlCalls[0].cmd)
+	}
+	if !contains(psqlCalls[1].cmd, "DROP USER IF EXISTS \"stripepayments_main\"") {
+		t.Errorf("second should DROP USER, got %v", psqlCalls[1].cmd)
+	}
+}
+
+func TestDropEnvDatabase_AbsentIsNoop(t *testing.T) {
+	// "does not exist" stderr from IF EXISTS should be impossible (psql
+	// doesn't error on IF EXISTS), but defensive: even non-IF-EXISTS-friendly
+	// stderr matching "does not exist" passes.
+	fd := &fakeDocker{
+		statuses: map[string]containerState{
+			ContainerName: {exists: true, running: true},
+		},
+		execResults: []execResult{{exitCode: 0}}, // IF EXISTS suppresses
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	p := newTestProvisioner(t, fd, fc)
+
+	if err := p.DropEnvDatabase(context.Background(), "stripe-payments", "deleted-branch"); err != nil {
+		t.Errorf("expected nil for absent DB, got %v", err)
+	}
+}
+
 // helpers
 func filterPsqlCalls(calls []execCall) []execCall {
 	var out []execCall

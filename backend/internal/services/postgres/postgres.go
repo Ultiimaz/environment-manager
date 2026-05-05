@@ -274,3 +274,24 @@ func (p *Provisioner) runPsqlIdempotent(ctx context.Context, sql, benignFragment
 	}
 	return fmt.Errorf("psql exit %d: stderr=%s", code, strings.TrimSpace(stderr))
 }
+
+// DropEnvDatabase removes the database and user for an environment. Both DROPs
+// use IF EXISTS so the call is naturally idempotent. The credential-store
+// password entry is NOT removed here — callers handle that as part of env
+// teardown alongside their own cleanup.
+func (p *Provisioner) DropEnvDatabase(ctx context.Context, projectName, branchSlug string) error {
+	dbName := SlugDatabaseName(projectName, branchSlug)
+	if err := p.runPsqlIdempotent(ctx,
+		fmt.Sprintf(`DROP DATABASE IF EXISTS "%s";`, dbName),
+		"does not exist",
+	); err != nil {
+		return fmt.Errorf("drop database %s: %w", dbName, err)
+	}
+	if err := p.runPsqlIdempotent(ctx,
+		fmt.Sprintf(`DROP USER IF EXISTS "%s";`, dbName),
+		"does not exist",
+	); err != nil {
+		return fmt.Errorf("drop user %s: %w", dbName, err)
+	}
+	return nil
+}
