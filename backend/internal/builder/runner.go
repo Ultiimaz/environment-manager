@@ -107,7 +107,17 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 	}
 
 	_, _ = log.Write([]byte("==> docker compose up -d --build\n"))
-	composeArgs := []string{"-f", "docker-compose.yaml", "-p", env.ID, "up", "-d", "--build"}
+	// --project-directory makes relative paths in the compose file (build
+	// contexts, dockerfile paths) resolve from the user's repo root rather
+	// than from envDir where the rendered compose lives. Without this,
+	// `build: { context: . }` would point at envDir and fail to find the
+	// app's source tree.
+	composeArgs := []string{
+		"-f", "docker-compose.yaml",
+		"-p", env.ID,
+		"--project-directory", project.LocalPath,
+		"up", "-d", "--build",
+	}
 	if err := r.exec.Compose(ctx, env.ID, envDir, composeArgs, log, log); err != nil {
 		_, _ = log.Write([]byte("BUILD FAILED: " + err.Error() + "\n"))
 		return r.fail(env, b, err.Error())
