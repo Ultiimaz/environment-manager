@@ -9,33 +9,22 @@ import (
 	"github.com/go-chi/cors"
 
 	"github.com/environment-manager/backend/internal/api/handlers"
-	"github.com/environment-manager/backend/internal/backup"
 	"github.com/environment-manager/backend/internal/builder"
-	"github.com/environment-manager/backend/internal/config"
 	"github.com/environment-manager/backend/internal/credentials"
-	"github.com/environment-manager/backend/internal/docker"
-	"github.com/environment-manager/backend/internal/git"
 	"github.com/environment-manager/backend/internal/projects"
-	"github.com/environment-manager/backend/internal/proxy"
 	"github.com/environment-manager/backend/internal/repos"
-	"github.com/environment-manager/backend/internal/state"
-	"github.com/environment-manager/backend/internal/stats"
 	"go.uber.org/zap"
 )
 
-// RouterConfig contains all dependencies for the router
+// RouterConfig contains all dependencies for the router.
+//
+// Slimmed down for env-manager v2: legacy fields (DockerClient, GitRepo,
+// ConfigLoader, StateManager, BackupScheduler, StatsStore, StatsCollector,
+// ProxyManager) removed. Only the .dev/-based PaaS surface remains.
 type RouterConfig struct {
-	DockerClient    *docker.Client
-	GitRepo         *git.Repository
-	ConfigLoader    *config.Loader
-	StateManager    *state.Manager
-	BackupScheduler *backup.Scheduler
-	StatsStore      *stats.Store
-	StatsCollector  *stats.Collector
-	ReposManager    *repos.Manager
+	ReposManager    *repos.Manager // kept temporarily — still used by ProjectsHandler.Create for cloning
 	ProjectsStore   *projects.Store
 	Builder         *builder.Runner
-	ProxyManager    *proxy.Manager
 	CredentialStore *credentials.Store
 	StaticDir       string
 	DataDir         string
@@ -43,7 +32,7 @@ type RouterConfig struct {
 	Logger          *zap.Logger
 }
 
-// NewRouter creates a new HTTP router
+// NewRouter creates a new HTTP router.
 func NewRouter(cfg RouterConfig) http.Handler {
 	r := chi.NewRouter()
 
@@ -62,104 +51,18 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	}))
 
 	// Create handlers
-	containerHandler := handlers.NewContainerHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.StateManager, cfg.GitRepo, cfg.BaseDomain, cfg.Logger)
-	volumeHandler := handlers.NewVolumeHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.BackupScheduler, cfg.GitRepo, cfg.Logger)
-	composeHandler := handlers.NewComposeHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.StateManager, cfg.ProxyManager, cfg.ReposManager, cfg.GitRepo, cfg.BaseDomain, cfg.DataDir, cfg.Logger)
-	networkHandler := handlers.NewNetworkHandler(cfg.DockerClient, cfg.ConfigLoader, cfg.ProxyManager, cfg.GitRepo, cfg.Logger)
-	gitHandler := handlers.NewGitHandler(cfg.GitRepo, cfg.StateManager, cfg.Logger)
-	logsHandler := handlers.NewLogsHandler(cfg.DockerClient)
-	webhookHandler := handlers.NewWebhookHandler(cfg.GitRepo, cfg.StateManager, cfg.Logger)
-	webhookHandler.SetComposeHandler(composeHandler)
+	webhookHandler := handlers.NewWebhookHandler(cfg.Logger)
 	webhookHandler.SetProjectsStore(cfg.ProjectsStore)
 	webhookHandler.SetRunner(cfg.Builder)
-	statsHandler := handlers.NewStatsHandler(cfg.DockerClient, cfg.StatsStore, cfg.StatsCollector)
-	execHandler := handlers.NewExecHandler(cfg.DockerClient, cfg.Logger)
-	reposHandler := handlers.NewReposHandler(cfg.ReposManager)
 	projectsHandler := handlers.NewProjectsHandler(cfg.ProjectsStore, cfg.ReposManager, cfg.CredentialStore, cfg.BaseDomain, cfg.Logger)
 	buildsHandler := handlers.NewBuildsHandler(cfg.ProjectsStore, cfg.Builder, cfg.DataDir, cfg.Logger)
-	githubHandler := handlers.NewGitHubHandler(cfg.ReposManager.Credentials(), cfg.Logger)
 
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
 		// Health
 		r.Get("/health", handlers.HealthCheck)
 
-		// Containers
-		r.Route("/containers", func(r chi.Router) {
-			r.Get("/", containerHandler.List)
-			r.Post("/", containerHandler.Create)
-			r.Get("/{id}", containerHandler.Get)
-			r.Put("/{id}", containerHandler.Update)
-			r.Delete("/{id}", containerHandler.Delete)
-			r.Post("/{id}/start", containerHandler.Start)
-			r.Post("/{id}/stop", containerHandler.Stop)
-			r.Post("/{id}/restart", containerHandler.Restart)
-			r.Get("/{id}/logs", containerHandler.GetLogs)
-			r.Get("/{id}/stats", statsHandler.GetStats)
-			r.Get("/{id}/stats/history", statsHandler.GetStatsHistory)
-			r.Post("/{id}/exec", execHandler.Exec)
-		})
-
-		// Stats (aggregate)
-		r.Get("/stats", statsHandler.GetAllStats)
-
-		// Volumes
-		r.Route("/volumes", func(r chi.Router) {
-			r.Get("/", volumeHandler.List)
-			r.Post("/", volumeHandler.Create)
-			r.Get("/{name}", volumeHandler.Get)
-			r.Put("/{name}", volumeHandler.Update)
-			r.Delete("/{name}", volumeHandler.Delete)
-			r.Post("/{name}/backup", volumeHandler.Backup)
-			r.Get("/{name}/backups", volumeHandler.ListBackups)
-			r.Post("/{name}/restore/{timestamp}", volumeHandler.Restore)
-		})
-
-		// Docker Compose
-		r.Route("/compose", func(r chi.Router) {
-			r.Get("/", composeHandler.List)
-			r.Post("/", composeHandler.Create)
-			r.Get("/{project}", composeHandler.Get)
-			r.Put("/{project}", composeHandler.Update)
-			r.Delete("/{project}", composeHandler.Delete)
-			r.Post("/{project}/up", composeHandler.Up)
-			r.Post("/{project}/down", composeHandler.Down)
-			r.Post("/{project}/restart", composeHandler.Restart)
-			r.Post("/{project}/link", composeHandler.LinkRepo)
-			r.Delete("/{project}/link", composeHandler.UnlinkRepo)
-		})
-
-		// Network
-		r.Route("/network", func(r chi.Router) {
-			r.Get("/", networkHandler.Get)
-			r.Put("/", networkHandler.Update)
-			r.Get("/status", networkHandler.Status)
-			r.Get("/routes", networkHandler.ListRoutes)
-			r.Post("/routes", networkHandler.AddRoute)
-			r.Delete("/routes/{subdomain}", networkHandler.DeleteRoute)
-			r.Get("/routes/{subdomain}/check", networkHandler.CheckSubdomain)
-		})
-
-		// Git
-		r.Route("/git", func(r chi.Router) {
-			r.Get("/status", gitHandler.Status)
-			r.Post("/sync", gitHandler.Sync)
-			r.Get("/history", gitHandler.History)
-		})
-
-		// Repositories
-		r.Route("/repos", func(r chi.Router) {
-			r.Get("/", reposHandler.List)
-			r.Post("/", reposHandler.Clone)
-			r.Get("/{id}", reposHandler.Get)
-			r.Post("/{id}/pull", reposHandler.Pull)
-			r.Delete("/{id}", reposHandler.Delete)
-			r.Get("/{id}/files", reposHandler.GetFiles)
-			r.Get("/{id}/compose", reposHandler.GetComposeFiles)
-			r.Get("/{id}/content", reposHandler.GetFileContent)
-		})
-
-		// Projects (.dev/-based deploys; coexists with /repos until step 10)
+		// Projects (.dev/-based deploys)
 		r.Route("/projects", func(r chi.Router) {
 			r.Get("/", projectsHandler.List)
 			r.Post("/", projectsHandler.Create)
@@ -169,39 +72,22 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Delete("/{id}/secrets/{key}", projectsHandler.DeleteSecret)
 		})
 
-		// Build trigger (WS log endpoint registered outside /api/v1, with the
-		// other ws/* routes)
+		// Build trigger (WS log endpoint registered outside /api/v1)
 		r.Route("/envs", func(r chi.Router) {
 			r.Post("/{id}/build", buildsHandler.Trigger)
 		})
 
-		// GitHub integration (single provider-wide PAT)
-		r.Route("/github", func(r chi.Router) {
-			r.Get("/status", githubHandler.GetStatus)
-			r.Post("/token", githubHandler.SetToken)
-			r.Delete("/token", githubHandler.DeleteToken)
-			r.Get("/repos", githubHandler.ListRepos)
-		})
-
 		// Webhooks
 		r.Post("/webhook/github", webhookHandler.GitHub)
-		r.Post("/webhook/gitlab", webhookHandler.GitLab)
-		r.Post("/webhook/generic", webhookHandler.Generic)
 	})
 
 	// WebSocket routes
-	r.Get("/ws/containers/{id}/logs", logsHandler.StreamLogs)
-	r.Get("/ws/containers/{id}/stats", statsHandler.StreamStats)
-	r.Get("/ws/containers/{id}/shell", execHandler.Shell)
-	r.Get("/ws/events", handlers.StreamEvents)
 	r.Get("/ws/envs/{id}/build-logs", buildsHandler.StreamLogs)
 
 	// Static files (frontend)
 	fileServer := http.FileServer(http.Dir(cfg.StaticDir))
 	r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// Try to serve the file
 		if _, err := http.Dir(cfg.StaticDir).Open(r.URL.Path); err != nil {
-			// File not found, serve index.html for SPA routing
 			http.ServeFile(w, r, filepath.Join(cfg.StaticDir, "index.html"))
 			return
 		}
