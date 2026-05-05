@@ -1,16 +1,21 @@
 package docker
 
 import (
+	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"time"
 
 	"github.com/docker/docker/api/types"
 	"github.com/docker/docker/api/types/container"
 	"github.com/docker/docker/api/types/filters"
+	"github.com/docker/docker/api/types/mount"
 	"github.com/docker/docker/api/types/network"
 	"github.com/docker/docker/api/types/volume"
 	"github.com/docker/docker/client"
+	"github.com/docker/docker/errdefs"
+	"github.com/docker/docker/pkg/stdcopy"
 )
 
 // Client wraps the Docker client
@@ -246,4 +251,148 @@ func (c *Client) ResizeExec(execID string, height, width uint) error {
 // InspectExec returns information about an exec instance
 func (c *Client) InspectExec(execID string) (types.ContainerExecInspect, error) {
 	return c.cli.ContainerExecInspect(c.ctx, execID)
+}
+
+// RunSpec describes a service-plane container to launch. Used by RunContainer.
+// Volumes maps a named volume (auto-created if missing) to a container path.
+// Env, Cmd, and Labels are optional.
+type RunSpec struct {
+	Name    string
+	Image   string
+	Network string
+	Volumes map[string]string
+	Env     map[string]string
+	Cmd     []string
+	Labels  map[string]string
+}
+
+// ContainerStatus reports whether a container with the given name exists and
+// whether it's running. Both false (with nil error) means the container is
+// absent. Used by service-plane bootstrap for idempotency.
+func (c *Client) ContainerStatus(ctx context.Context, name string) (exists, running bool, err error) {
+	list, err := c.cli.ContainerList(ctx, container.ListOptions{
+		All:     true,
+		Filters: filters.NewArgs(filters.Arg("name", "^/"+name+"$")),
+	})
+	if err != nil {
+		return false, false, err
+	}
+	if len(list) == 0 {
+		return false, false, nil
+	}
+	return true, list[0].State == "running", nil
+}
+
+// RunContainer pulls the image (idempotent), creates the container, attaches
+// it to the named network, mounts the named volumes, and starts it. If a
+// container with that name already exists the call returns nil — caller is
+// expected to check ContainerStatus first if it cares.
+func (c *Client) RunContainer(ctx context.Context, spec RunSpec) error {
+	// Pull image — idempotent; ImagePull short-circuits when the image is local.
+	pullReader, err := c.cli.ImagePull(ctx, spec.Image, types.ImagePullOptions{})
+	if err != nil {
+		return fmt.Errorf("pull %s: %w", spec.Image, err)
+	}
+	if _, err := io.Copy(io.Discard, pullReader); err != nil {
+		_ = pullReader.Close()
+		return fmt.Errorf("drain image pull: %w", err)
+	}
+	_ = pullReader.Close()
+
+	// Build env slice
+	envSlice := make([]string, 0, len(spec.Env))
+	for k, v := range spec.Env {
+		envSlice = append(envSlice, k+"="+v)
+	}
+
+	// Build mounts. Each volume entry => bind a named volume to a container path.
+	mounts := make([]mount.Mount, 0, len(spec.Volumes))
+	for vol, target := range spec.Volumes {
+		mounts = append(mounts, mount.Mount{
+			Type:   mount.TypeVolume,
+			Source: vol,
+			Target: target,
+		})
+	}
+
+	cfg := &container.Config{
+		Image:  spec.Image,
+		Env:    envSlice,
+		Cmd:    spec.Cmd,
+		Labels: spec.Labels,
+	}
+	hostCfg := &container.HostConfig{
+		Mounts:        mounts,
+		RestartPolicy: container.RestartPolicy{Name: "unless-stopped"},
+	}
+	netCfg := &network.NetworkingConfig{
+		EndpointsConfig: map[string]*network.EndpointSettings{
+			spec.Network: {},
+		},
+	}
+
+	resp, err := c.cli.ContainerCreate(ctx, cfg, hostCfg, netCfg, nil, spec.Name)
+	if err != nil {
+		// If the daemon already has a container with that name, treat as success.
+		if errdefs.IsConflict(err) {
+			return nil
+		}
+		return fmt.Errorf("create container %s: %w", spec.Name, err)
+	}
+	if err := c.cli.ContainerStart(ctx, resp.ID, container.StartOptions{}); err != nil {
+		return fmt.Errorf("start container %s: %w", spec.Name, err)
+	}
+	return nil
+}
+
+// ExecCommand runs cmd inside an existing container and returns the captured
+// stdout, stderr, exit code, and any operational error from the docker daemon.
+// A non-zero exit code is NOT returned as an error — callers inspect the int.
+func (c *Client) ExecCommand(ctx context.Context, container string, cmd []string) (stdout string, stderr string, exitCode int, err error) {
+	create, err := c.cli.ContainerExecCreate(ctx, container, types.ExecConfig{
+		Cmd:          cmd,
+		AttachStdout: true,
+		AttachStderr: true,
+	})
+	if err != nil {
+		return "", "", 0, fmt.Errorf("exec create: %w", err)
+	}
+	attach, err := c.cli.ContainerExecAttach(ctx, create.ID, types.ExecStartCheck{})
+	if err != nil {
+		return "", "", 0, fmt.Errorf("exec attach: %w", err)
+	}
+	defer attach.Close()
+
+	var stdoutBuf, stderrBuf bytes.Buffer
+	if _, err := stdcopy.StdCopy(&stdoutBuf, &stderrBuf, attach.Reader); err != nil {
+		return stdoutBuf.String(), stderrBuf.String(), 0, fmt.Errorf("exec read: %w", err)
+	}
+	inspect, err := c.cli.ContainerExecInspect(ctx, create.ID)
+	if err != nil {
+		return stdoutBuf.String(), stderrBuf.String(), 0, fmt.Errorf("exec inspect: %w", err)
+	}
+	return stdoutBuf.String(), stderrBuf.String(), inspect.ExitCode, nil
+}
+
+// EnsureBridgeNetwork creates a default-driver bridge network with no IPAM
+// override if absent. Idempotent. Differs from EnsureNetwork (which requires
+// a subnet) — used for paas-net where we just want Docker DNS between
+// service-plane containers and their per-env consumers.
+func (c *Client) EnsureBridgeNetwork(ctx context.Context, name string) error {
+	networks, err := c.cli.NetworkList(ctx, types.NetworkListOptions{
+		Filters: filters.NewArgs(filters.Arg("name", name)),
+	})
+	if err != nil {
+		return err
+	}
+	for _, n := range networks {
+		if n.Name == name {
+			return nil
+		}
+	}
+	_, err = c.cli.NetworkCreate(ctx, name, types.NetworkCreate{
+		Driver: "bridge",
+		Labels: map[string]string{"env-manager.managed": "true"},
+	})
+	return err
 }
