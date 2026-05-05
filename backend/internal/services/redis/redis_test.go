@@ -243,3 +243,84 @@ func TestRedisEnsureService_ReadyTimeout(t *testing.T) {
 		t.Fatal("expected timeout error")
 	}
 }
+
+func TestEnsureEnvACL_FreshCreate(t *testing.T) {
+	fd := &fakeDocker{
+		statuses:    map[string]containerState{ContainerName: {exists: true, running: true}},
+		execResults: []execResult{{stdout: "OK", exitCode: 0}}, // ACL SETUSER returns OK
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	p := newTestProvisioner(t, fd, fc)
+
+	got, err := p.EnsureEnvACL(context.Background(), "envid-abc", "stripe-payments", "main")
+	if err != nil {
+		t.Fatalf("EnsureEnvACL: %v", err)
+	}
+	want := &EnvACL{
+		Username:    "stripepayments_main",
+		KeyPrefix:   "stripe-payments:main",
+		PasswordKey: "env:envid-abc:redis_password",
+	}
+	if got.Username != want.Username || got.KeyPrefix != want.KeyPrefix || got.PasswordKey != want.PasswordKey {
+		t.Errorf("got %+v want %+v", got, want)
+	}
+	stored, err := fc.GetProjectSecret("envid-abc", "redis_password")
+	if err != nil || stored == "" {
+		t.Errorf("password not stored: %q (err=%v)", stored, err)
+	}
+
+	cliCalls := filterRedisCliCalls(fd.execCalls)
+	if len(cliCalls) != 1 {
+		t.Fatalf("expected 1 redis-cli call, got %d: %+v", len(cliCalls), cliCalls)
+	}
+	cmd := cliCalls[0].cmd
+	// redis-cli -a <super> ACL SETUSER <user> on >password ~prefix:* +@all -@dangerous
+	if !contains(cmd, "ACL") || !contains(cmd, "SETUSER") {
+		t.Errorf("missing ACL SETUSER, got %v", cmd)
+	}
+	if !contains(cmd, "stripepayments_main") {
+		t.Errorf("missing user, got %v", cmd)
+	}
+	if !contains(cmd, "~stripe-payments:main:*") {
+		t.Errorf("missing prefix scope, got %v", cmd)
+	}
+	if !contains(cmd, "+@all") || !contains(cmd, "-@dangerous") {
+		t.Errorf("missing capability flags, got %v", cmd)
+	}
+}
+
+func TestEnsureEnvACL_IdempotentReUse(t *testing.T) {
+	// Second call: stored password is reused (not regenerated).
+	fd := &fakeDocker{
+		statuses:    map[string]containerState{ContainerName: {exists: true, running: true}},
+		execResults: []execResult{{stdout: "OK", exitCode: 0}},
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	_ = fc.SaveProjectSecret("envid-abc", "redis_password", "stored-pw")
+	p := newTestProvisioner(t, fd, fc)
+
+	if _, err := p.EnsureEnvACL(context.Background(), "envid-abc", "stripe-payments", "main"); err != nil {
+		t.Fatal(err)
+	}
+	stored, _ := fc.GetProjectSecret("envid-abc", "redis_password")
+	if stored != "stored-pw" {
+		t.Errorf("expected reused, got %q", stored)
+	}
+}
+
+func TestEnsureEnvACL_RedisFailureBubbles(t *testing.T) {
+	fd := &fakeDocker{
+		statuses:    map[string]containerState{ContainerName: {exists: true, running: true}},
+		execResults: []execResult{{exitCode: 1, stderr: "(error) something broke"}},
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	p := newTestProvisioner(t, fd, fc)
+
+	_, err := p.EnsureEnvACL(context.Background(), "e", "p", "main")
+	if err == nil {
+		t.Fatal("expected redis-cli failure to surface")
+	}
+}

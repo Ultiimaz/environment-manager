@@ -188,3 +188,54 @@ func (p *Provisioner) waitReady(ctx context.Context) error {
 		}
 	}
 }
+
+// EnsureEnvACL ensures a per-environment Redis ACL user exists with prefix
+// scoping. Idempotent — `ACL SETUSER` replaces existing entries with the
+// same name, so re-runs are safe. Stored passwords are reused across calls.
+func (p *Provisioner) EnsureEnvACL(ctx context.Context, envID, projectName, branchSlug string) (*EnvACL, error) {
+	user := SlugUserName(projectName, branchSlug)
+	prefix := SlugKeyPrefix(projectName, branchSlug)
+	pwKey := "redis_password"
+	pwStoreKey := "env:" + envID + ":redis_password"
+
+	password, err := p.creds.GetProjectSecret(envID, pwKey)
+	if err != nil {
+		generated, gerr := p.passwordGen()
+		if gerr != nil {
+			return nil, fmt.Errorf("generate redis password: %w", gerr)
+		}
+		if serr := p.creds.SaveProjectSecret(envID, pwKey, generated); serr != nil {
+			return nil, fmt.Errorf("save redis password: %w", serr)
+		}
+		password = generated
+	}
+
+	superPw, err := p.creds.GetSystemSecret(SuperuserKey)
+	if err != nil {
+		return nil, fmt.Errorf("redis superuser password missing: %w", err)
+	}
+
+	cmd := []string{
+		"redis-cli", "-a", superPw,
+		"ACL", "SETUSER", user,
+		"on", ">" + password,
+		"~" + prefix + ":*",
+		"+@all", "-@dangerous",
+	}
+	stdout, stderr, code, err := p.docker.ExecCommand(ctx, ContainerName, cmd)
+	if err != nil {
+		return nil, fmt.Errorf("ACL SETUSER %s: %w (stdout=%q stderr=%q)", user, err, stdout, stderr)
+	}
+	if code != 0 {
+		return nil, fmt.Errorf("ACL SETUSER %s exit %d: %s", user, code, strings.TrimSpace(stderr))
+	}
+	if !strings.Contains(stdout, "OK") {
+		return nil, fmt.Errorf("ACL SETUSER %s: unexpected stdout %q", user, strings.TrimSpace(stdout))
+	}
+
+	return &EnvACL{
+		Username:    user,
+		KeyPrefix:   prefix,
+		PasswordKey: pwStoreKey,
+	}, nil
+}
