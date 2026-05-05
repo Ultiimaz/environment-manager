@@ -374,6 +374,36 @@ func TestDropEnvACL_RemovesUser(t *testing.T) {
 	}
 }
 
+func TestEnsureEnvACL_PopulatesURL(t *testing.T) {
+	fd := &fakeDocker{
+		statuses:    map[string]containerState{ContainerName: {exists: true, running: true}},
+		execResults: []execResult{{stdout: "OK", exitCode: 0}},
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	p := newTestProvisioner(t, fd, fc)
+
+	got, err := p.EnsureEnvACL(context.Background(), "envid-abc", "stripe-payments", "main")
+	if err != nil {
+		t.Fatalf("EnsureEnvACL: %v", err)
+	}
+	wantPrefix := "redis://stripepayments_main:"
+	wantSuffix := "@paas-redis:6379/0"
+	if got.URL == "" {
+		t.Fatalf("URL empty")
+	}
+	if !strings.HasPrefix(got.URL, wantPrefix) {
+		t.Errorf("URL prefix wrong: got %q want prefix %q", got.URL, wantPrefix)
+	}
+	if !strings.HasSuffix(got.URL, wantSuffix) {
+		t.Errorf("URL suffix wrong: got %q want suffix %q", got.URL, wantSuffix)
+	}
+	stored, _ := fc.GetProjectSecret("envid-abc", "redis_password")
+	if !strings.Contains(got.URL, stored) {
+		t.Errorf("URL doesn't contain stored password")
+	}
+}
+
 func TestDropEnvACL_AbsentUserIsNoop(t *testing.T) {
 	// DELUSER returns "0" in stdout when the user didn't exist; treat as success.
 	fd := &fakeDocker{

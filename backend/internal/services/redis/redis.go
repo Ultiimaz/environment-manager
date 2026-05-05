@@ -61,6 +61,7 @@ type EnvACL struct {
 	Username    string // identical to per-env DB name (postgres convention)
 	KeyPrefix   string // "<project_slug>:<branch_slug>"
 	PasswordKey string // "env:<env-id>:redis_password"
+	URL         string // redis://user:pw@paas-redis:6379/0
 }
 
 // Provisioner manages the service-plane Redis singleton.
@@ -239,6 +240,7 @@ func (p *Provisioner) EnsureEnvACL(ctx context.Context, envID, projectName, bran
 		Username:    user,
 		KeyPrefix:   prefix,
 		PasswordKey: pwStoreKey,
+		URL:         fmt.Sprintf("redis://%s:%s@%s:6379/0", user, password, ContainerName),
 	}, nil
 }
 

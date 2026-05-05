@@ -429,6 +429,39 @@ func TestDropEnvDatabase_AbsentIsNoop(t *testing.T) {
 	}
 }
 
+func TestEnsureEnvDatabase_PopulatesURL(t *testing.T) {
+	fd := &fakeDocker{
+		statuses: map[string]containerState{
+			ContainerName: {exists: true, running: true},
+		},
+		execResults: []execResult{{exitCode: 0}},
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	p := newTestProvisioner(t, fd, fc)
+
+	got, err := p.EnsureEnvDatabase(context.Background(), "envid-abc", "stripe-payments", "main")
+	if err != nil {
+		t.Fatalf("EnsureEnvDatabase: %v", err)
+	}
+	wantPrefix := "postgres://stripepayments_main:"
+	wantSuffix := "@paas-postgres:5432/stripepayments_main?sslmode=disable"
+	if got.URL == "" {
+		t.Fatalf("URL empty")
+	}
+	if !strings.HasPrefix(got.URL, wantPrefix) {
+		t.Errorf("URL prefix wrong: got %q want prefix %q", got.URL, wantPrefix)
+	}
+	if !strings.HasSuffix(got.URL, wantSuffix) {
+		t.Errorf("URL suffix wrong: got %q want suffix %q", got.URL, wantSuffix)
+	}
+	// URL embeds the password verbatim — verify it matches the stored value.
+	stored, _ := fc.GetProjectSecret("envid-abc", "db_password")
+	if !strings.Contains(got.URL, stored) {
+		t.Errorf("URL doesn't contain stored password")
+	}
+}
+
 // helpers
 func filterPsqlCalls(calls []execCall) []execCall {
 	var out []execCall
