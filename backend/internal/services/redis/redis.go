@@ -1,0 +1,106 @@
+// Package redis provisions the env-manager service-plane Redis singleton and
+// per-environment ACL users.
+//
+// EnsureService boots the singleton container "paas-redis" if absent.
+// EnsureEnvACL creates a per-env ACL user with prefix-scoped permissions.
+// DropEnvACL removes one on environment teardown.
+package redis
+
+import (
+	"context"
+	"crypto/rand"
+	"encoding/hex"
+	"fmt"
+	"strings"
+	"time"
+
+	"go.uber.org/zap"
+)
+
+const (
+	ContainerName  = "paas-redis"
+	Image          = "redis:7"
+	VolumeName     = "paas_redis_data"
+	MountPath      = "/data"
+	NetworkName    = "paas-net"
+	SuperuserKey   = "system:paas-redis:superuser"
+	defaultPwBytes = 24
+	readyTimeout   = 60 * time.Second
+	readyInterval  = 1 * time.Second
+)
+
+type RunSpec struct {
+	Name    string
+	Image   string
+	Network string
+	Volumes map[string]string
+	Env     map[string]string
+	Cmd     []string
+	Labels  map[string]string
+}
+
+// Docker is the minimal docker.Client subset the provisioner needs.
+type Docker interface {
+	ContainerStatus(ctx context.Context, name string) (exists, running bool, err error)
+	RunContainer(ctx context.Context, spec RunSpec) error
+	StartContainer(name string) error
+	ExecCommand(ctx context.Context, container string, cmd []string) (stdout, stderr string, exitCode int, err error)
+	EnsureBridgeNetwork(ctx context.Context, name string) error
+}
+
+// CredStore is the cred-store subset the provisioner needs.
+type CredStore interface {
+	GetSystemSecret(key string) (string, error)
+	SaveSystemSecret(key, value string) error
+	SaveProjectSecret(projectID, key, value string) error
+	GetProjectSecret(projectID, key string) (string, error)
+}
+
+// EnvACL describes a per-environment Redis ACL user after provisioning.
+type EnvACL struct {
+	Username    string // identical to per-env DB name (postgres convention)
+	KeyPrefix   string // "<project_slug>:<branch_slug>"
+	PasswordKey string // "env:<env-id>:redis_password"
+}
+
+// Provisioner manages the service-plane Redis singleton.
+type Provisioner struct {
+	docker      Docker
+	creds       CredStore
+	logger      *zap.Logger
+	passwordGen func() (string, error)
+	now         func() time.Time
+}
+
+func New(d Docker, creds CredStore, logger *zap.Logger) *Provisioner {
+	if logger == nil {
+		logger = zap.NewNop()
+	}
+	return &Provisioner{
+		docker:      d,
+		creds:       creds,
+		logger:      logger,
+		passwordGen: defaultPasswordGen,
+		now:         time.Now,
+	}
+}
+
+func defaultPasswordGen() (string, error) {
+	buf := make([]byte, defaultPwBytes)
+	if _, err := rand.Read(buf); err != nil {
+		return "", fmt.Errorf("generate password: %w", err)
+	}
+	return hex.EncodeToString(buf), nil
+}
+
+// SlugUserName mirrors postgres.SlugDatabaseName for ACL user naming.
+func SlugUserName(projectName, branchSlug string) string {
+	clean := strings.ToLower(strings.ReplaceAll(projectName, "-", ""))
+	return clean + "_" + strings.ReplaceAll(strings.ToLower(branchSlug), "-", "_")
+}
+
+// SlugKeyPrefix produces the Redis key prefix scope: "<project>:<branch>".
+// Hyphens in either are kept (they are valid in Redis key names).
+func SlugKeyPrefix(projectName, branchSlug string) string {
+	return strings.ToLower(strings.ReplaceAll(projectName, "_", "-")) + ":" + branchSlug
+}
