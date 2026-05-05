@@ -2,11 +2,13 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 	"time"
 
@@ -92,6 +94,31 @@ func (h *BuildsHandler) runBuild(env *models.Environment, b *models.Build) {
 			zap.Error(err),
 		)
 	}
+}
+
+// List handles GET /api/v1/envs/{id}/builds — returns the env's build history,
+// most-recent first. Build records include status, SHA, timestamps, log path.
+func (h *BuildsHandler) List(w http.ResponseWriter, r *http.Request) {
+	envID := chi.URLParam(r, "id")
+	projectID, _, ok := splitEnvID(envID)
+	if !ok {
+		respondError(w, http.StatusBadRequest, "INVALID_ENV_ID", "env id must be <project>--<slug>")
+		return
+	}
+	builds, err := h.store.ListBuildsForEnv(projectID, envID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "STORE_ERROR", err.Error())
+		return
+	}
+	if builds == nil {
+		builds = []*models.Build{}
+	}
+	// Most-recent first.
+	sort.Slice(builds, func(i, j int) bool {
+		return builds[i].StartedAt.After(builds[j].StartedAt)
+	})
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(builds)
 }
 
 // splitEnvID parses "<projectID>--<slug>" into its parts.

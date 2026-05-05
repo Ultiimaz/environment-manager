@@ -22,14 +22,17 @@ import (
 // ConfigLoader, StateManager, BackupScheduler, StatsStore, StatsCollector,
 // ProxyManager) removed. Only the .dev/-based PaaS surface remains.
 type RouterConfig struct {
-	ReposManager    *repos.Manager // kept temporarily — still used by ProjectsHandler.Create for cloning
-	ProjectsStore   *projects.Store
-	Builder         *builder.Runner
-	CredentialStore *credentials.Store
-	StaticDir       string
-	DataDir         string
-	BaseDomain      string
-	Logger          *zap.Logger
+	ReposManager     *repos.Manager // kept temporarily — still used by ProjectsHandler.Create for cloning
+	ProjectsStore    *projects.Store
+	Builder          *builder.Runner
+	CredentialStore  *credentials.Store
+	StaticDir        string
+	DataDir          string
+	BaseDomain       string
+	Logger           *zap.Logger
+	DockerClient     handlers.ContainerInspector // nil = services endpoints return exists=false
+	LetsencryptEmail string
+	Version          string
 }
 
 // NewRouter creates a new HTTP router.
@@ -57,6 +60,8 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	projectsHandler := handlers.NewProjectsHandler(cfg.ProjectsStore, cfg.ReposManager, cfg.CredentialStore, cfg.BaseDomain, cfg.Logger, cfg.Builder)
 	buildsHandler := handlers.NewBuildsHandler(cfg.ProjectsStore, cfg.Builder, cfg.DataDir, cfg.Logger)
 	envsHandler := handlers.NewEnvsHandler(cfg.ProjectsStore, cfg.Builder, cfg.CredentialStore, cfg.Logger)
+	servicesHandler := handlers.NewServicesHandler(cfg.DockerClient)
+	settingsHandler := handlers.NewSettingsHandler(cfg.LetsencryptEmail, cfg.CredentialStore != nil, cfg.Version)
 
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
@@ -70,6 +75,10 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		r.Get("/projects", projectsHandler.List)
 		r.Get("/projects/{id}", projectsHandler.Get)
 		r.Get("/projects/{id}/secrets", projectsHandler.ListSecrets)
+		r.Get("/envs/{id}/builds", buildsHandler.List)
+		r.Get("/services/postgres", servicesHandler.Postgres)
+		r.Get("/services/redis", servicesHandler.Redis)
+		r.Get("/settings", settingsHandler.Get)
 
 		// Mutating endpoints — require admin token. Bearer middleware skipped
 		// when credStore is nil (early-boot / no-key dev mode); in that mode
