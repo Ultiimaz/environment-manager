@@ -27,6 +27,39 @@ type ComposeExecutor interface {
 	Compose(ctx context.Context, projectName, workdir string, args []string, stdout, stderr io.Writer) error
 }
 
+// PostgresProvisioner is the runner-facing surface of services/postgres.
+// Real implementation: *postgres.Provisioner. Tests: in-memory fake.
+type PostgresProvisioner interface {
+	EnsureEnvDatabase(ctx context.Context, envID, projectName, branchSlug string) (*PostgresEnvDatabase, error)
+	DropEnvDatabase(ctx context.Context, projectName, branchSlug string) error
+}
+
+// RedisProvisioner is the runner-facing surface of services/redis.
+// Real implementation: *redis.Provisioner. Tests: in-memory fake.
+type RedisProvisioner interface {
+	EnsureEnvACL(ctx context.Context, envID, projectName, branchSlug string) (*RedisEnvACL, error)
+	DropEnvACL(ctx context.Context, projectName, branchSlug string) error
+}
+
+// PostgresEnvDatabase mirrors postgres.EnvDatabase. Defined locally so the
+// builder package doesn't import services/postgres directly (the import
+// would cause a cycle once the runner is consumed by services tests). Same
+// shape, distinct nominal type — adapters bridge the two.
+type PostgresEnvDatabase struct {
+	DatabaseName string
+	Username     string
+	PasswordKey  string
+	URL          string
+}
+
+// RedisEnvACL mirrors redis.EnvACL.
+type RedisEnvACL struct {
+	Username    string
+	KeyPrefix   string
+	PasswordKey string
+	URL         string
+}
+
 // DockerComposeExecutor invokes the host's `docker compose` binary.
 type DockerComposeExecutor struct{}
 
@@ -51,6 +84,8 @@ type Runner struct {
 	logger       *zap.Logger
 	logRing      int // ring buffer size for buildlog.Log
 	credStore    *credentials.Store
+	postgres     PostgresProvisioner // nil = postgres provisioning disabled
+	redis        RedisProvisioner    // nil = redis provisioning disabled
 }
 
 // NewRunner constructs a Runner. proxyNetwork is the name of the external
@@ -225,4 +260,12 @@ func (r *Runner) fail(env *models.Environment, b *models.Build, msg string) erro
 		zap.String("build_id", b.ID),
 		zap.String("reason", msg))
 	return errors.New(msg)
+}
+
+// SetServiceProvisioners wires the per-env service provisioners. Either or
+// both may be nil; nil disables provisioning for that service. Safe to call
+// before serving but not concurrently with Build/Teardown.
+func (r *Runner) SetServiceProvisioners(pg PostgresProvisioner, rd RedisProvisioner) {
+	r.postgres = pg
+	r.redis = rd
 }
