@@ -272,3 +272,247 @@ func TestRunner_BuildFailure(t *testing.T) {
 		t.Errorf("env status = %v, want failed", gotEnv.Status)
 	}
 }
+
+// fakePostgres / fakeRedis implement the runner's provisioner interfaces.
+type fakePostgres struct {
+	ensureCalls []string // env IDs ensured
+	dropCalls   []string // "<project>/<branch>" entries
+	url         string
+	username    string
+	dbName      string
+	ensureErr   error
+}
+
+func (f *fakePostgres) EnsureEnvDatabase(_ context.Context, envID, projectName, branchSlug string) (*PostgresEnvDatabase, error) {
+	f.ensureCalls = append(f.ensureCalls, envID)
+	if f.ensureErr != nil {
+		return nil, f.ensureErr
+	}
+	url := f.url
+	if url == "" {
+		url = "postgres://stripepayments_main:fakepw@paas-postgres:5432/stripepayments_main?sslmode=disable"
+	}
+	user := f.username
+	if user == "" {
+		user = "stripepayments_main"
+	}
+	db := f.dbName
+	if db == "" {
+		db = "stripepayments_main"
+	}
+	return &PostgresEnvDatabase{
+		DatabaseName: db,
+		Username:     user,
+		PasswordKey:  "env:" + envID + ":db_password",
+		URL:          url,
+	}, nil
+}
+
+func (f *fakePostgres) DropEnvDatabase(_ context.Context, projectName, branchSlug string) error {
+	f.dropCalls = append(f.dropCalls, projectName+"/"+branchSlug)
+	return nil
+}
+
+type fakeRedis struct {
+	ensureCalls []string
+	dropCalls   []string
+	url         string
+}
+
+func (f *fakeRedis) EnsureEnvACL(_ context.Context, envID, projectName, branchSlug string) (*RedisEnvACL, error) {
+	f.ensureCalls = append(f.ensureCalls, envID)
+	url := f.url
+	if url == "" {
+		url = "redis://stripepayments_main:fakepw@paas-redis:6379/0"
+	}
+	return &RedisEnvACL{
+		Username:    "stripepayments_main",
+		KeyPrefix:   "stripe-payments:main",
+		PasswordKey: "env:" + envID + ":redis_password",
+		URL:         url,
+	}, nil
+}
+
+func (f *fakeRedis) DropEnvACL(_ context.Context, projectName, branchSlug string) error {
+	f.dropCalls = append(f.dropCalls, projectName+"/"+branchSlug)
+	return nil
+}
+
+func TestRunner_Build_ServicesProvisioning(t *testing.T) {
+	r, store, project, env, dataDir, exec := newRunnerTest(t)
+
+	// Add a v2 .dev/config.yaml declaring services.
+	devCfg := `project_name: myapp
+expose:
+  service: app
+  port: 80
+services:
+  postgres: true
+  redis: true
+`
+	if err := os.WriteFile(filepath.Join(project.LocalPath, ".dev", "config.yaml"), []byte(devCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Set up cred-store + fake provisioners.
+	credKey := make([]byte, 32)
+	for i := range credKey {
+		credKey[i] = byte(i + 7)
+	}
+	credStore, err := credentials.NewStore(filepath.Join(dataDir, "creds.json"), credKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pg := &fakePostgres{}
+	rd := &fakeRedis{}
+	// Re-construct runner with credStore + provisioners.
+	r2 := NewRunner(store, exec, dataDir, "", NewQueue(), zap.NewNop(), credStore)
+	r2.SetServiceProvisioners(pg, rd)
+	_ = r // keep newRunnerTest's runner alive; we use r2
+
+	build := &models.Build{
+		ID: "b1", EnvID: env.ID, SHA: "abc",
+		TriggeredBy: models.BuildTriggerManual,
+		Status:      models.BuildStatusRunning,
+	}
+	_ = store.SaveBuild("p1", build)
+
+	if err := r2.Build(context.Background(), env, build); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(pg.ensureCalls) != 1 || pg.ensureCalls[0] != env.ID {
+		t.Errorf("postgres EnsureEnvDatabase calls: %v want [%s]", pg.ensureCalls, env.ID)
+	}
+	if len(rd.ensureCalls) != 1 || rd.ensureCalls[0] != env.ID {
+		t.Errorf("redis EnsureEnvACL calls: %v want [%s]", rd.ensureCalls, env.ID)
+	}
+
+	// .env should contain DATABASE_URL + REDIS_URL.
+	envPath := filepath.Join(project.LocalPath, ".env")
+	data, err := os.ReadFile(envPath)
+	if err != nil {
+		t.Fatalf(".env not written: %v", err)
+	}
+	content := string(data)
+	if !strings.Contains(content, "DATABASE_URL=postgres://") {
+		t.Errorf(".env missing DATABASE_URL; got:\n%s", content)
+	}
+	if !strings.Contains(content, "REDIS_URL=redis://") {
+		t.Errorf(".env missing REDIS_URL; got:\n%s", content)
+	}
+
+	// The rendered compose should have paas-net attached to the service.
+	composePath := filepath.Join(dataDir, "envs", env.ID, "docker-compose.yaml")
+	composeData, err := os.ReadFile(composePath)
+	if err != nil {
+		t.Fatalf("compose not rendered: %v", err)
+	}
+	if !strings.Contains(string(composeData), "paas-net") {
+		t.Errorf("rendered compose missing paas-net:\n%s", composeData)
+	}
+}
+
+func TestRunner_Build_NoServicesDeclared_NoProvisioning(t *testing.T) {
+	r, store, project, env, dataDir, exec := newRunnerTest(t)
+	_ = r // unused
+
+	// Write a v2 config with services explicitly false.
+	devCfg := `project_name: myapp
+expose:
+  service: app
+  port: 80
+services:
+  postgres: false
+  redis: false
+`
+	if err := os.WriteFile(filepath.Join(project.LocalPath, ".dev", "config.yaml"), []byte(devCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	pg := &fakePostgres{}
+	rd := &fakeRedis{}
+	r2 := NewRunner(store, exec, dataDir, "", NewQueue(), zap.NewNop(), nil)
+	r2.SetServiceProvisioners(pg, rd)
+
+	build := &models.Build{
+		ID: "b1", EnvID: env.ID, SHA: "abc",
+		TriggeredBy: models.BuildTriggerManual,
+		Status:      models.BuildStatusRunning,
+	}
+	_ = store.SaveBuild("p1", build)
+
+	if err := r2.Build(context.Background(), env, build); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	if len(pg.ensureCalls) != 0 {
+		t.Errorf("expected no postgres provisioning, got %d calls", len(pg.ensureCalls))
+	}
+	if len(rd.ensureCalls) != 0 {
+		t.Errorf("expected no redis provisioning, got %d calls", len(rd.ensureCalls))
+	}
+}
+
+func TestRunner_Build_NoIacConfig_NoProvisioning(t *testing.T) {
+	r, store, _, env, dataDir, exec := newRunnerTest(t)
+	_ = r
+	// Don't write .dev/config.yaml — newRunnerTest skipped it. The runner
+	// must treat the missing file as "no services declared" and continue.
+
+	pg := &fakePostgres{}
+	rd := &fakeRedis{}
+	r2 := NewRunner(store, exec, dataDir, "", NewQueue(), zap.NewNop(), nil)
+	r2.SetServiceProvisioners(pg, rd)
+
+	build := &models.Build{
+		ID: "b1", EnvID: env.ID, SHA: "abc",
+		TriggeredBy: models.BuildTriggerManual,
+		Status:      models.BuildStatusRunning,
+	}
+	_ = store.SaveBuild("p1", build)
+
+	if err := r2.Build(context.Background(), env, build); err != nil {
+		t.Fatalf("Build should succeed without iac config, got %v", err)
+	}
+	if len(pg.ensureCalls) != 0 {
+		t.Errorf("expected no postgres provisioning when iac absent, got %d calls", len(pg.ensureCalls))
+	}
+	if len(rd.ensureCalls) != 0 {
+		t.Errorf("expected no redis provisioning when iac absent, got %d calls", len(rd.ensureCalls))
+	}
+}
+
+func TestRunner_Build_NilProvisioner_NoProvisioning(t *testing.T) {
+	r, store, project, env, dataDir, exec := newRunnerTest(t)
+	_ = r
+
+	devCfg := `project_name: myapp
+expose:
+  service: app
+  port: 80
+services:
+  postgres: true
+  redis: true
+`
+	if err := os.WriteFile(filepath.Join(project.LocalPath, ".dev", "config.yaml"), []byte(devCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Don't call SetServiceProvisioners — both nil.
+	r2 := NewRunner(store, exec, dataDir, "", NewQueue(), zap.NewNop(), nil)
+
+	build := &models.Build{
+		ID: "b1", EnvID: env.ID, SHA: "abc",
+		TriggeredBy: models.BuildTriggerManual,
+		Status:      models.BuildStatusRunning,
+	}
+	_ = store.SaveBuild("p1", build)
+
+	if err := r2.Build(context.Background(), env, build); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	// Build must not have crashed despite iac declaring services and provisioners being nil.
+	gotEnv, _ := store.GetEnvironment(env.ProjectID, env.BranchSlug)
+	if gotEnv.Status != models.EnvStatusRunning {
+		t.Errorf("env status = %v, want running", gotEnv.Status)
+	}
+}
