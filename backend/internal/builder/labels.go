@@ -128,8 +128,18 @@ func buildTraefikLabels(env *models.Environment, targetPort int, opts TraefikOpt
 		labels[fmt.Sprintf("traefik.http.routers.%s.service", homeRouter)] = env.ID
 	}
 
-	// Public domains: prod uses Domains.Prod directly; preview is added in Task 4.
-	publicHosts := opts.Domains.Prod
+	// Public domains: prod uses Domains.Prod directly; preview resolves
+	// Preview.Pattern with {branch} → env.BranchSlug substitution.
+	var publicHosts []string
+	switch env.Kind {
+	case models.EnvKindProd:
+		publicHosts = opts.Domains.Prod
+	case models.EnvKindPreview:
+		if opts.Domains.Preview.Pattern != "" && env.BranchSlug != "" {
+			resolved := strings.ReplaceAll(opts.Domains.Preview.Pattern, "{branch}", env.BranchSlug)
+			publicHosts = []string{resolved}
+		}
+	}
 
 	if len(publicHosts) > 0 {
 		publicRouter := env.ID + "-public"
