@@ -5,6 +5,7 @@ import (
 	"errors"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeDocker struct {
@@ -158,4 +159,87 @@ func contains(cmd []string, fragment string) bool {
 		}
 	}
 	return false
+}
+
+func TestRedisEnsureService_FreshBoot(t *testing.T) {
+	fd := &fakeDocker{
+		statuses:    map[string]containerState{},
+		execResults: []execResult{{stdout: "PONG", exitCode: 0}},
+	}
+	fc := newFakeCreds()
+	p := newTestProvisioner(t, fd, fc)
+
+	if err := p.EnsureService(context.Background()); err != nil {
+		t.Fatalf("EnsureService: %v", err)
+	}
+	if len(fd.netCalls) != 1 || fd.netCalls[0] != NetworkName {
+		t.Fatalf("expected EnsureBridgeNetwork(%q)", NetworkName)
+	}
+	if len(fd.runCalls) != 1 {
+		t.Fatalf("expected 1 RunContainer call, got %d", len(fd.runCalls))
+	}
+	spec := fd.runCalls[0]
+	if spec.Name != ContainerName || spec.Image != Image {
+		t.Errorf("wrong spec: %+v", spec)
+	}
+	if spec.Volumes[VolumeName] != MountPath {
+		t.Errorf("volume mount wrong: %v", spec.Volumes)
+	}
+	// redis-server --requirepass <generated>
+	if len(spec.Cmd) < 3 || spec.Cmd[0] != "redis-server" || spec.Cmd[1] != "--requirepass" {
+		t.Errorf("expected redis-server --requirepass <pw>, got %v", spec.Cmd)
+	}
+	if spec.Cmd[2] == "" {
+		t.Errorf("password arg empty: %v", spec.Cmd)
+	}
+	saved, err := fc.GetSystemSecret(SuperuserKey)
+	if err != nil || saved != spec.Cmd[2] {
+		t.Errorf("password not persisted (saved=%q, cmd=%q)", saved, spec.Cmd[2])
+	}
+}
+
+func TestRedisEnsureService_RunningIsNoop(t *testing.T) {
+	fd := &fakeDocker{
+		statuses:    map[string]containerState{ContainerName: {exists: true, running: true}},
+		execResults: []execResult{{stdout: "PONG", exitCode: 0}},
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	p := newTestProvisioner(t, fd, fc)
+	if err := p.EnsureService(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(fd.runCalls) != 0 || len(fd.startCalls) != 0 {
+		t.Errorf("expected idempotent noop, got %d run / %d start", len(fd.runCalls), len(fd.startCalls))
+	}
+}
+
+func TestRedisEnsureService_StoppedIsStarted(t *testing.T) {
+	fd := &fakeDocker{
+		statuses:    map[string]containerState{ContainerName: {exists: true, running: false}},
+		execResults: []execResult{{stdout: "PONG", exitCode: 0}},
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	p := newTestProvisioner(t, fd, fc)
+	if err := p.EnsureService(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(fd.startCalls) != 1 || fd.startCalls[0] != ContainerName {
+		t.Errorf("expected single StartContainer(%q), got %v", ContainerName, fd.startCalls)
+	}
+}
+
+func TestRedisEnsureService_ReadyTimeout(t *testing.T) {
+	fd := &fakeDocker{
+		statuses:    map[string]containerState{},
+		execResults: []execResult{{exitCode: 1, stderr: "Could not connect"}},
+	}
+	fc := newFakeCreds()
+	p := newTestProvisioner(t, fd, fc)
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+	if err := p.EnsureService(ctx); err == nil {
+		t.Fatal("expected timeout error")
+	}
 }

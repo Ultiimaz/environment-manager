@@ -104,3 +104,87 @@ func SlugUserName(projectName, branchSlug string) string {
 func SlugKeyPrefix(projectName, branchSlug string) string {
 	return strings.ToLower(strings.ReplaceAll(projectName, "_", "-")) + ":" + branchSlug
 }
+
+// EnsureService idempotently brings paas-redis into a running state.
+//
+// On first boot, generates a 24-byte superuser password (stored under
+// SuperuserKey), launches redis:7 with `redis-server --requirepass <pw>`,
+// and waits for `redis-cli ping` → "PONG".
+func (p *Provisioner) EnsureService(ctx context.Context) error {
+	if err := p.docker.EnsureBridgeNetwork(ctx, NetworkName); err != nil {
+		return fmt.Errorf("ensure paas-net: %w", err)
+	}
+	exists, running, err := p.docker.ContainerStatus(ctx, ContainerName)
+	if err != nil {
+		return fmt.Errorf("inspect %s: %w", ContainerName, err)
+	}
+	switch {
+	case exists && running:
+		return p.waitReady(ctx)
+	case exists && !running:
+		if err := p.docker.StartContainer(ContainerName); err != nil {
+			return fmt.Errorf("start %s: %w", ContainerName, err)
+		}
+		return p.waitReady(ctx)
+	}
+
+	pw, err := p.creds.GetSystemSecret(SuperuserKey)
+	if err != nil {
+		generated, gerr := p.passwordGen()
+		if gerr != nil {
+			return fmt.Errorf("generate redis superuser password: %w", gerr)
+		}
+		if serr := p.creds.SaveSystemSecret(SuperuserKey, generated); serr != nil {
+			return fmt.Errorf("save redis superuser password: %w", serr)
+		}
+		pw = generated
+	}
+
+	spec := RunSpec{
+		Name:    ContainerName,
+		Image:   Image,
+		Network: NetworkName,
+		Volumes: map[string]string{VolumeName: MountPath},
+		Cmd:     []string{"redis-server", "--requirepass", pw},
+		Labels: map[string]string{
+			"env-manager.managed":   "true",
+			"env-manager.singleton": "redis",
+		},
+	}
+	if err := p.docker.RunContainer(ctx, spec); err != nil {
+		return fmt.Errorf("run %s: %w", ContainerName, err)
+	}
+	return p.waitReady(ctx)
+}
+
+// waitReady polls `redis-cli -a <pw> ping` until it returns PONG (exit 0
+// with stdout containing "PONG") or the context deadline is hit.
+func (p *Provisioner) waitReady(ctx context.Context) error {
+	deadline, hasDeadline := ctx.Deadline()
+	if !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, readyTimeout)
+		defer cancel()
+		deadline, _ = ctx.Deadline()
+	}
+	pw, err := p.creds.GetSystemSecret(SuperuserKey)
+	if err != nil {
+		return fmt.Errorf("redis superuser password missing for ping: %w", err)
+	}
+	for {
+		stdout, _, code, eErr := p.docker.ExecCommand(ctx, ContainerName,
+			[]string{"redis-cli", "-a", pw, "ping"},
+		)
+		if eErr == nil && code == 0 && strings.Contains(stdout, "PONG") {
+			return nil
+		}
+		if p.now().After(deadline) {
+			return fmt.Errorf("paas-redis not ready before deadline: code=%d stdout=%q lastErr=%v", code, stdout, eErr)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("paas-redis ready wait cancelled: %w", ctx.Err())
+		case <-time.After(readyInterval):
+		}
+	}
+}
