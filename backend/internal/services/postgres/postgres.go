@@ -71,6 +71,7 @@ type EnvDatabase struct {
 	DatabaseName string // e.g. stripepayments_main
 	Username     string // identical to DatabaseName
 	PasswordKey  string // "env:<env-id>:db_password"
+	URL          string // postgres://user:pw@paas-postgres:5432/db?sslmode=disable
 }
 
 // Provisioner manages the service-plane Postgres singleton.
@@ -251,6 +252,10 @@ func (p *Provisioner) EnsureEnvDatabase(ctx context.Context, envID, projectName,
 		DatabaseName: dbName,
 		Username:     dbName,
 		PasswordKey:  pwStoreKey,
+		URL: fmt.Sprintf(
+			"postgres://%s:%s@%s:5432/%s?sslmode=disable",
+			dbName, password, ContainerName, dbName,
+		),
 	}, nil
 }
 

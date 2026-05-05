@@ -48,32 +48,34 @@ func main() {
 		logger.Warn("Failed to initialize credential store", zap.Error(err))
 	}
 
-	// Service-plane bootstrap (Flow G): ensure paas-net + paas-postgres + paas-redis.
-	// Failures are logged but don't abort startup — Plan 3a ships the bootstrap
-	// without consumers; the runner doesn't yet require these to be running.
+	// Service-plane bootstrap + long-lived provisioners (Flow G + Plan 3b wiring).
+	// dockerCli stays alive for the lifetime of the process so the runner's
+	// provisioners can reuse it.
+	var pgProvisioner *postgres.Provisioner
+	var rdProvisioner *redis.Provisioner
 	if credStore == nil {
-		logger.Warn("Service-plane bootstrap skipped: credential store unavailable")
+		logger.Warn("Service-plane skipped: credential store unavailable")
 	} else {
 		dockerCli, err := docker.NewClient()
 		if err != nil {
-			logger.Error("Service-plane bootstrap: docker client init failed", zap.Error(err))
+			logger.Error("Service-plane: docker client init failed", zap.Error(err))
 		} else {
-			pg := postgres.New(realdocker.NewPostgres(dockerCli), credStore, logger)
-			rd := redis.New(realdocker.NewRedis(dockerCli), credStore, logger)
+			defer func() { _ = dockerCli.Close() }()
+			pgProvisioner = postgres.New(realdocker.NewPostgres(dockerCli), credStore, logger)
+			rdProvisioner = redis.New(realdocker.NewRedis(dockerCli), credStore, logger)
 
 			bootstrapCtx, bootstrapCancel := context.WithTimeout(context.Background(), 2*time.Minute)
-			if err := pg.EnsureService(bootstrapCtx); err != nil {
+			if err := pgProvisioner.EnsureService(bootstrapCtx); err != nil {
 				logger.Error("Service-plane bootstrap: postgres failed", zap.Error(err))
 			} else {
 				logger.Info("Service-plane: paas-postgres ready")
 			}
-			if err := rd.EnsureService(bootstrapCtx); err != nil {
+			if err := rdProvisioner.EnsureService(bootstrapCtx); err != nil {
 				logger.Error("Service-plane bootstrap: redis failed", zap.Error(err))
 			} else {
 				logger.Info("Service-plane: paas-redis ready")
 			}
 			bootstrapCancel()
-			_ = dockerCli.Close()
 		}
 	}
 
@@ -100,6 +102,17 @@ func main() {
 	buildQueue := builder.NewQueue()
 	buildExec := builder.DockerComposeExecutor{}
 	buildRunner := builder.NewRunner(projectsStore, buildExec, cfg.DataDir, cfg.ProxyNetwork, buildQueue, logger, credStore)
+
+	if pgProvisioner != nil && rdProvisioner != nil {
+		buildRunner.SetServiceProvisioners(
+			&pgRunnerAdapter{p: pgProvisioner},
+			&rdRunnerAdapter{p: rdProvisioner},
+		)
+	} else if pgProvisioner != nil {
+		buildRunner.SetServiceProvisioners(&pgRunnerAdapter{p: pgProvisioner}, nil)
+	} else if rdProvisioner != nil {
+		buildRunner.SetServiceProvisioners(nil, &rdRunnerAdapter{p: rdProvisioner})
+	}
 
 	// Branch reconcile (fetch origin per project, spawn missing previews, tear down gone branches)
 	spawner := &reconcileSpawner{
@@ -201,4 +214,42 @@ func (s *reconcileSpawner) SpawnPreview(ctx context.Context, project *models.Pro
 
 func (s *reconcileSpawner) Teardown(ctx context.Context, env *models.Environment) error {
 	return s.runner.Teardown(ctx, env)
+}
+
+// pgRunnerAdapter bridges *postgres.Provisioner to builder.PostgresProvisioner.
+type pgRunnerAdapter struct{ p *postgres.Provisioner }
+
+func (a *pgRunnerAdapter) EnsureEnvDatabase(ctx context.Context, envID, projectName, branchSlug string) (*builder.PostgresEnvDatabase, error) {
+	db, err := a.p.EnsureEnvDatabase(ctx, envID, projectName, branchSlug)
+	if err != nil {
+		return nil, err
+	}
+	return &builder.PostgresEnvDatabase{
+		DatabaseName: db.DatabaseName,
+		Username:     db.Username,
+		PasswordKey:  db.PasswordKey,
+		URL:          db.URL,
+	}, nil
+}
+func (a *pgRunnerAdapter) DropEnvDatabase(ctx context.Context, projectName, branchSlug string) error {
+	return a.p.DropEnvDatabase(ctx, projectName, branchSlug)
+}
+
+// rdRunnerAdapter bridges *redis.Provisioner to builder.RedisProvisioner.
+type rdRunnerAdapter struct{ p *redis.Provisioner }
+
+func (a *rdRunnerAdapter) EnsureEnvACL(ctx context.Context, envID, projectName, branchSlug string) (*builder.RedisEnvACL, error) {
+	acl, err := a.p.EnsureEnvACL(ctx, envID, projectName, branchSlug)
+	if err != nil {
+		return nil, err
+	}
+	return &builder.RedisEnvACL{
+		Username:    acl.Username,
+		KeyPrefix:   acl.KeyPrefix,
+		PasswordKey: acl.PasswordKey,
+		URL:         acl.URL,
+	}, nil
+}
+func (a *rdRunnerAdapter) DropEnvACL(ctx context.Context, projectName, branchSlug string) error {
+	return a.p.DropEnvACL(ctx, projectName, branchSlug)
 }
