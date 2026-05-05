@@ -8,8 +8,25 @@ import (
 
 	"gopkg.in/yaml.v3"
 
+	"github.com/environment-manager/backend/internal/iac"
 	"github.com/environment-manager/backend/internal/models"
 )
+
+// TraefikOptions configures InjectTraefikLabels behaviour.
+//
+//   - ProxyNetwork: name of the external network Traefik listens on (matches
+//     the existing v1 contract). Empty → InjectTraefikLabels is a noop.
+//   - Domains: per-env domain config from iac.Config.Domains. Nil → legacy
+//     single-router behaviour (one HTTP router on env.URL).
+//   - LetsencryptEmail: required for HTTPS+LE on non-.home domains. Empty →
+//     public domains fall back to HTTP-only routers; caller is expected to
+//     emit a warning. Plan 5 does NOT mutate Traefik command flags — that's
+//     a manual one-time host op covered by Plan 8.
+type TraefikOptions struct {
+	ProxyNetwork     string
+	Domains          *iac.Domains
+	LetsencryptEmail string
+}
 
 // InjectTraefikLabels reads the compose file at composePath, injects Traefik
 // routing labels and the proxy network onto the target service, and writes the
@@ -23,8 +40,8 @@ import (
 //
 // When proxyNetwork is empty the function returns nil immediately so that
 // tests that pass "" bypass label injection entirely.
-func InjectTraefikLabels(composePath string, env *models.Environment, expose *models.ExposeSpec, proxyNetwork string) error {
-	if proxyNetwork == "" {
+func InjectTraefikLabels(composePath string, env *models.Environment, expose *models.ExposeSpec, opts TraefikOptions) error {
+	if opts.ProxyNetwork == "" {
 		return nil
 	}
 
@@ -69,12 +86,12 @@ func InjectTraefikLabels(composePath string, env *models.Environment, expose *mo
 		fmt.Sprintf("traefik.http.routers.%s.rule", routerName):                      fmt.Sprintf("Host(`%s`)", env.URL),
 		fmt.Sprintf("traefik.http.routers.%s.entrypoints", routerName):               "web",
 		fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port", routerName): strconv.Itoa(targetPort),
-		"traefik.docker.network": proxyNetwork,
+		"traefik.docker.network": opts.ProxyNetwork,
 	}
 
 	labelsEnsureLabels(svc, labels)
-	labelsEnsureNetworkOnService(svc, proxyNetwork)
-	labelsEnsureExternalNetwork(root, proxyNetwork)
+	labelsEnsureNetworkOnService(svc, opts.ProxyNetwork)
+	labelsEnsureExternalNetwork(root, opts.ProxyNetwork)
 
 	out, err := yaml.Marshal(&doc)
 	if err != nil {

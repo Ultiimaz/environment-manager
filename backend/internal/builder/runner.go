@@ -232,7 +232,7 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 
 	composePath := filepath.Join(envDir, "docker-compose.yaml")
 	_, _ = log.Write([]byte("==> injecting traefik labels\n"))
-	if err := InjectTraefikLabels(composePath, env, project.Expose, r.proxyNetwork); err != nil {
+	if err := InjectTraefikLabels(composePath, env, project.Expose, TraefikOptions{ProxyNetwork: r.proxyNetwork}); err != nil {
 		_, _ = log.Write([]byte("ERROR: " + err.Error() + "\n"))
 		return r.fail(env, b, "inject traefik labels: "+err.Error())
 	}

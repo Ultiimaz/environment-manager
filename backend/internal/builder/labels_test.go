@@ -38,7 +38,7 @@ func TestInjectTraefikLabels_EmptyProxyNetwork(t *testing.T) {
 	original := "services:\n  web:\n    image: nginx\n    ports:\n      - \"80:80\"\n"
 	path := writeCompose(t, dir, original)
 
-	err := InjectTraefikLabels(path, testEnv("e1", "app.home"), nil, "")
+	err := InjectTraefikLabels(path, testEnv("e1", "app.home"), nil, TraefikOptions{})
 	if err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
@@ -65,7 +65,7 @@ func TestInjectTraefikLabels_ExplicitExpose(t *testing.T) {
 	expose := &models.ExposeSpec{Service: "web", Port: 3000}
 	env := testEnv("proj--main", "myapp.home")
 
-	if err := InjectTraefikLabels(path, env, expose, "my-macvlan-net"); err != nil {
+	if err := InjectTraefikLabels(path, env, expose, TraefikOptions{ProxyNetwork: "my-macvlan-net"}); err != nil {
 		t.Fatalf("InjectTraefikLabels: %v", err)
 	}
 
@@ -100,7 +100,7 @@ func TestInjectTraefikLabels_PortsConvention(t *testing.T) {
 	path := writeCompose(t, dir, input)
 	env := testEnv("p1--dev", "app.dev.home")
 
-	if err := InjectTraefikLabels(path, env, nil, "proxy-net"); err != nil {
+	if err := InjectTraefikLabels(path, env, nil, TraefikOptions{ProxyNetwork: "proxy-net"}); err != nil {
 		t.Fatalf("InjectTraefikLabels: %v", err)
 	}
 
@@ -124,7 +124,7 @@ func TestInjectTraefikLabels_BarePort(t *testing.T) {
 	path := writeCompose(t, dir, input)
 	env := testEnv("p2--main", "bare.home")
 
-	if err := InjectTraefikLabels(path, env, nil, "net"); err != nil {
+	if err := InjectTraefikLabels(path, env, nil, TraefikOptions{ProxyNetwork: "net"}); err != nil {
 		t.Fatalf("InjectTraefikLabels: %v", err)
 	}
 
@@ -139,7 +139,7 @@ func TestInjectTraefikLabels_NoTarget(t *testing.T) {
 	original := "services:\n  app:\n    image: alpine\n"
 	path := writeCompose(t, dir, original)
 
-	if err := InjectTraefikLabels(path, testEnv("e1", "x.home"), nil, "net"); err != nil {
+	if err := InjectTraefikLabels(path, testEnv("e1", "x.home"), nil, TraefikOptions{ProxyNetwork: "net"}); err != nil {
 		t.Fatalf("InjectTraefikLabels: %v", err)
 	}
 
@@ -166,7 +166,7 @@ func TestInjectTraefikLabels_PreservesOtherServices(t *testing.T) {
 `
 	path := writeCompose(t, dir, input)
 
-	if err := InjectTraefikLabels(path, testEnv("p--main", "app.home"), nil, "macvlan"); err != nil {
+	if err := InjectTraefikLabels(path, testEnv("p--main", "app.home"), nil, TraefikOptions{ProxyNetwork: "macvlan"}); err != nil {
 		t.Fatalf("InjectTraefikLabels: %v", err)
 	}
 
@@ -188,10 +188,10 @@ func TestInjectTraefikLabels_IdempotentLabels(t *testing.T) {
 	path := writeCompose(t, dir, input)
 	env := testEnv("p--main", "app.home")
 
-	if err := InjectTraefikLabels(path, env, nil, "macvlan"); err != nil {
+	if err := InjectTraefikLabels(path, env, nil, TraefikOptions{ProxyNetwork: "macvlan"}); err != nil {
 		t.Fatalf("first inject: %v", err)
 	}
-	if err := InjectTraefikLabels(path, env, nil, "macvlan"); err != nil {
+	if err := InjectTraefikLabels(path, env, nil, TraefikOptions{ProxyNetwork: "macvlan"}); err != nil {
 		t.Fatalf("second inject: %v", err)
 	}
 
@@ -215,7 +215,7 @@ func TestInjectTraefikLabels_LongFormPort(t *testing.T) {
 	path := writeCompose(t, dir, input)
 	env := testEnv("p--main", "app.home")
 
-	if err := InjectTraefikLabels(path, env, nil, "net"); err != nil {
+	if err := InjectTraefikLabels(path, env, nil, TraefikOptions{ProxyNetwork: "net"}); err != nil {
 		t.Fatalf("InjectTraefikLabels: %v", err)
 	}
 
