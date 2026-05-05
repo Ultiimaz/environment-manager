@@ -39,6 +39,12 @@ func main() {
 		runSecrets(os.Args[2:])
 	case "projects":
 		runProjects(os.Args[2:])
+	case "builds":
+		runBuilds(os.Args[2:])
+	case "envs":
+		runEnvs(os.Args[2:])
+	case "services":
+		runServices(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -62,6 +68,11 @@ Usage:
   envm projects onboard <git-url> [--token PAT]
   envm projects show <project-id>
   envm projects delete <project-id> [--yes]
+  envm builds trigger <project>/<env>
+  envm builds logs <project>/<env>
+  envm builds list <project>/<env>
+  envm envs destroy <project>/<env> [--yes]
+  envm services status
   envm config show
   envm version
 
