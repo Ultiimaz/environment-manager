@@ -56,6 +56,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	webhookHandler.SetRunner(cfg.Builder)
 	projectsHandler := handlers.NewProjectsHandler(cfg.ProjectsStore, cfg.ReposManager, cfg.CredentialStore, cfg.BaseDomain, cfg.Logger, cfg.Builder)
 	buildsHandler := handlers.NewBuildsHandler(cfg.ProjectsStore, cfg.Builder, cfg.DataDir, cfg.Logger)
+	envsHandler := handlers.NewEnvsHandler(cfg.ProjectsStore, cfg.Builder, cfg.CredentialStore, cfg.Logger)
 
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
@@ -85,6 +86,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Put("/projects/{id}/secrets", projectsHandler.SetSecrets)
 			r.Delete("/projects/{id}/secrets/{key}", projectsHandler.DeleteSecret)
 			r.Post("/envs/{id}/build", buildsHandler.Trigger)
+			r.Post("/envs/{id}/destroy", envsHandler.Destroy)
 		})
 	})
 
