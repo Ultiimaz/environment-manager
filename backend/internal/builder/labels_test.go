@@ -315,3 +315,50 @@ func TestInjectTraefikLabels_V2_LeEmailEmptyFallbackToHttp(t *testing.T) {
 		t.Errorf("expected no TLS label when LetsencryptEmail is empty; got:\n%s", out)
 	}
 }
+
+func TestInjectTraefikLabels_V2_HttpsRedirect(t *testing.T) {
+	dir := t.TempDir()
+	input := "services:\n  app:\n    image: alpine\n"
+	path := writeCompose(t, dir, input)
+
+	env := &models.Environment{ID: "p--main", URL: "myapp.home", Kind: models.EnvKindProd}
+	err := InjectTraefikLabels(path, env, &models.ExposeSpec{Service: "app", Port: 80}, TraefikOptions{
+		ProxyNetwork:     "my-net",
+		Domains:          &iac.Domains{Prod: []string{"blocksweb.nl"}},
+		LetsencryptEmail: "ops@example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := readCompose(t, path)
+	// Redirect router on web entrypoint with same host rule.
+	mustContain(t, out, "traefik.http.routers.p--main-public-http.rule=Host(`blocksweb.nl`)")
+	mustContain(t, out, "traefik.http.routers.p--main-public-http.entrypoints=web")
+	mustContain(t, out, "traefik.http.routers.p--main-public-http.middlewares=https-redirect-p--main")
+	// Middleware definition.
+	mustContain(t, out, "traefik.http.middlewares.https-redirect-p--main.redirectscheme.scheme=https")
+}
+
+func TestInjectTraefikLabels_V2_NoRedirectWhenLeUnset(t *testing.T) {
+	dir := t.TempDir()
+	input := "services:\n  app:\n    image: alpine\n"
+	path := writeCompose(t, dir, input)
+
+	env := &models.Environment{ID: "p--main", URL: "myapp.home", Kind: models.EnvKindProd}
+	err := InjectTraefikLabels(path, env, &models.ExposeSpec{Service: "app", Port: 80}, TraefikOptions{
+		ProxyNetwork:     "my-net",
+		Domains:          &iac.Domains{Prod: []string{"blocksweb.nl"}},
+		LetsencryptEmail: "", // unset
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := readCompose(t, path)
+	// No redirect router or middleware when LE is not configured.
+	if strings.Contains(out, "p--main-public-http") {
+		t.Errorf("expected no redirect router when LE unset; got:\n%s", out)
+	}
+	if strings.Contains(out, "https-redirect-p--main") {
+		t.Errorf("expected no redirect middleware when LE unset; got:\n%s", out)
+	}
+}

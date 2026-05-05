@@ -139,11 +139,19 @@ func buildTraefikLabels(env *models.Environment, targetPort int, opts TraefikOpt
 			labels[fmt.Sprintf("traefik.http.routers.%s.entrypoints", publicRouter)] = "websecure"
 			labels[fmt.Sprintf("traefik.http.routers.%s.tls", publicRouter)] = "true"
 			labels[fmt.Sprintf("traefik.http.routers.%s.tls.certresolver", publicRouter)] = "letsencrypt"
+
+			// HTTP→HTTPS redirect router + middleware.
+			redirectRouter := env.ID + "-public-http"
+			middlewareName := "https-redirect-" + env.ID
+			labels[fmt.Sprintf("traefik.http.routers.%s.rule", redirectRouter)] = formatHostRule(publicHosts)
+			labels[fmt.Sprintf("traefik.http.routers.%s.entrypoints", redirectRouter)] = "web"
+			labels[fmt.Sprintf("traefik.http.routers.%s.middlewares", redirectRouter)] = middlewareName
+			labels[fmt.Sprintf("traefik.http.routers.%s.service", redirectRouter)] = env.ID
+			labels[fmt.Sprintf("traefik.http.middlewares.%s.redirectscheme.scheme", middlewareName)] = "https"
 		} else {
-			// LE not configured — emit HTTP-only public router so the domains
-			// are at least reachable. Caller (runner) is expected to log a
-			// warning. Task 3 adds the redirect-to-HTTPS router only when
-			// LE is configured.
+			// HTTP-only fallback when LE unconfigured. Caller (runner) is
+			// expected to log a warning. No redirect router emitted because
+			// there's no HTTPS endpoint to redirect to.
 			labels[fmt.Sprintf("traefik.http.routers.%s.entrypoints", publicRouter)] = "web"
 		}
 	}
