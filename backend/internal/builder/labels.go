@@ -234,9 +234,15 @@ func labelsEnsureLabels(svc *yaml.Node, labels map[string]string) {
 func labelsEnsureNetworkOnService(svc *yaml.Node, network string) {
 	networksNode := labelsFindMapValue(svc, "networks")
 	if networksNode == nil {
+		// Service had no `networks:` clause — meaning it was implicitly on
+		// the compose project's `default` network (where its peers live,
+		// e.g. mysql, redis). Preserve that connectivity by listing both
+		// `default` and the proxy network explicitly. Without `default`,
+		// the service can't reach its compose-mate containers.
 		labelsSetMapValue(svc, "networks", &yaml.Node{
 			Kind: yaml.SequenceNode,
 			Content: []*yaml.Node{
+				{Kind: yaml.ScalarNode, Value: "default"},
 				{Kind: yaml.ScalarNode, Value: network},
 			},
 		})
