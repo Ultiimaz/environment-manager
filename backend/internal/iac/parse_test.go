@@ -46,3 +46,45 @@ func TestParse_ProjectNameRequired(t *testing.T) {
 		})
 	}
 }
+
+func TestParse_UnknownFieldsRejected(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+	}{
+		{
+			"unknown top-level",
+			"project_name: app\nexpose:\n  service: app\n  port: 80\nuknown_field: 1\n",
+		},
+		{
+			"typo in domains.preview",
+			`project_name: app
+expose:
+  service: app
+  port: 80
+domains:
+  preveiw:
+    pattern: "{branch}.example.com"
+`,
+		},
+		{
+			"typo in expose",
+			`project_name: app
+expose:
+  servce: app
+  port: 80
+`,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Parse([]byte(tc.input))
+			if err == nil {
+				t.Fatalf("expected unknown-field error, got nil")
+			}
+			if !errors.Is(err, ErrInvalidConfig) {
+				t.Fatalf("expected ErrInvalidConfig, got %v", err)
+			}
+		})
+	}
+}
