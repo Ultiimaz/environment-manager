@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -33,7 +34,9 @@ func Parse(data []byte) (*Config, error) {
 // validate enforces the schema rules locked in the design spec.
 // It is deliberately separate from decoding so future callers can
 // validate already-decoded configs (e.g. round-trip tests).
-func validate(_ *Config) error {
-	// Filled in by subsequent tasks.
+func validate(c *Config) error {
+	if strings.TrimSpace(c.ProjectName) == "" {
+		return fmt.Errorf("%w: project_name required", ErrInvalidConfig)
+	}
 	return nil
 }
