@@ -83,7 +83,7 @@ func newTestProjectsHandler(t *testing.T) (*ProjectsHandler, string) {
 		t.Fatal(err)
 	}
 	logger := zap.NewNop()
-	h := NewProjectsHandler(store, reposManager, "home", logger)
+	h := NewProjectsHandler(store, reposManager, nil, "home", logger)
 	return h, dataDir
 }
 

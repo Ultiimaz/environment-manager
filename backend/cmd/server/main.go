@@ -117,7 +117,7 @@ func main() {
 
 	buildQueue := builder.NewQueue()
 	buildExec := builder.DockerComposeExecutor{}
-	buildRunner := builder.NewRunner(projectsStore, buildExec, cfg.DataDir, cfg.ProxyNetwork, buildQueue, logger)
+	buildRunner := builder.NewRunner(projectsStore, buildExec, cfg.DataDir, cfg.ProxyNetwork, buildQueue, logger, credStore)
 
 	spawner := &reconcileSpawner{
 		store:              projectsStore,
@@ -162,6 +162,7 @@ func main() {
 		ProjectsStore:   projectsStore,
 		Builder:         buildRunner,
 		ProxyManager:    proxyManager,
+		CredentialStore: credStore,
 		StaticDir:       cfg.StaticDir,
 		DataDir:         cfg.DataDir,
 		BaseDomain:      cfg.BaseDomain,

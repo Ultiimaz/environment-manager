@@ -12,6 +12,7 @@ import (
 	"github.com/environment-manager/backend/internal/backup"
 	"github.com/environment-manager/backend/internal/builder"
 	"github.com/environment-manager/backend/internal/config"
+	"github.com/environment-manager/backend/internal/credentials"
 	"github.com/environment-manager/backend/internal/docker"
 	"github.com/environment-manager/backend/internal/git"
 	"github.com/environment-manager/backend/internal/projects"
@@ -35,6 +36,7 @@ type RouterConfig struct {
 	ProjectsStore   *projects.Store
 	Builder         *builder.Runner
 	ProxyManager    *proxy.Manager
+	CredentialStore *credentials.Store
 	StaticDir       string
 	DataDir         string
 	BaseDomain      string
@@ -73,7 +75,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	statsHandler := handlers.NewStatsHandler(cfg.DockerClient, cfg.StatsStore, cfg.StatsCollector)
 	execHandler := handlers.NewExecHandler(cfg.DockerClient, cfg.Logger)
 	reposHandler := handlers.NewReposHandler(cfg.ReposManager)
-	projectsHandler := handlers.NewProjectsHandler(cfg.ProjectsStore, cfg.ReposManager, cfg.BaseDomain, cfg.Logger)
+	projectsHandler := handlers.NewProjectsHandler(cfg.ProjectsStore, cfg.ReposManager, cfg.CredentialStore, cfg.BaseDomain, cfg.Logger)
 	buildsHandler := handlers.NewBuildsHandler(cfg.ProjectsStore, cfg.Builder, cfg.DataDir, cfg.Logger)
 	githubHandler := handlers.NewGitHubHandler(cfg.ReposManager.Credentials(), cfg.Logger)
 
@@ -162,6 +164,9 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Get("/", projectsHandler.List)
 			r.Post("/", projectsHandler.Create)
 			r.Get("/{id}", projectsHandler.Get)
+			r.Get("/{id}/secrets", projectsHandler.ListSecrets)
+			r.Put("/{id}/secrets", projectsHandler.SetSecrets)
+			r.Delete("/{id}/secrets/{key}", projectsHandler.DeleteSecret)
 		})
 
 		// Build trigger (WS log endpoint registered outside /api/v1, with the
