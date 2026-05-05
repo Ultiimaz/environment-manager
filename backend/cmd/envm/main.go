@@ -93,10 +93,3 @@ func maskToken(token string) string {
 	}
 	return token[:5] + "xxxx..." + token[len(token)-4:]
 }
-
-// runSecrets is a Task 5 placeholder so the binary builds. Task 6 replaces
-// this with the real subcommand dispatcher in secrets.go.
-func runSecrets(args []string) {
-	fmt.Fprintln(os.Stderr, "envm secrets: not implemented yet (lands in Plan 6a Task 6)")
-	os.Exit(2)
-}
