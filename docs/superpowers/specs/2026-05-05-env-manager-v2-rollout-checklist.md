@@ -59,8 +59,17 @@ After merge + redeploy:
 - [ ] Add `hooks.post_deploy: ["echo from post"]`, push — build succeeds, log shows `==> post_deploy[1/1]: echo from post` AFTER `==> docker compose up -d`
 - [ ] Make a post-deploy hook fail (`exit 1`) — build still marked success, log contains `WARNING: post_deploy hook 1 ("...") failed: ...`
 
-## Plan 5 — Custom-domain + Let's Encrypt
-*(populated when plan 5 is written)*
+## Plan 5 — Multi-domain Traefik labels with Let's Encrypt
+
+After merge + redeploy:
+- [ ] `cd backend && go test ./internal/builder/... -v` — all PASS, including new TestInjectTraefikLabels_V2_* and TestRunner_Build_V2Domains* tests
+- [ ] env-manager redeploy script now sets `LETSENCRYPT_EMAIL=<your email>` alongside `CREDENTIAL_KEY`
+- [ ] Existing stripe-payments builds (still v1 schema) trigger normally — runner emits the legacy single HTTP router on env.URL, no `-home`/`-public` routers
+- [ ] Manual: extend the test fixture project's `.dev/config.yaml` with `domains.prod: ["mytestdomain.com"]`, push — observe rendered compose has `-home` + `-public` routers + redirect router + middleware
+- [ ] If LETSENCRYPT_EMAIL is unset, build log shows `WARNING: domains declared but LETSENCRYPT_EMAIL is unset; public domains will serve HTTP only`
+- [ ] Traefik command flags for `--certificatesresolvers.letsencrypt.*` are deferred to Plan 8 (manual host op); without them, certs won't actually issue — but the labels are emitted correctly so Plan 8's host-side flags will start issuing certs immediately
+- [ ] Cross-project domain conflict detection deferred to a future plan
+- [ ] env-manager's own public hostname (manager.blocksweb.nl) deferred to Plan 6
 
 ## Plan 6 — envm CLI
 *(populated when plan 6 is written)*
