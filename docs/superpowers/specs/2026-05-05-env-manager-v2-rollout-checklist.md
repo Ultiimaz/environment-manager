@@ -50,7 +50,14 @@ After merge + redeploy:
 - [ ] Same battery for redis with `services.redis: true` (`ACL LIST` instead of `\l`/`\du`)
 
 ## Plan 4 — Pre/post-deploy hooks
-*(populated when plan 4 is written)*
+
+After merge + redeploy:
+- [ ] `cd backend && go test ./internal/hooks/... ./internal/builder/... -v` — all PASS, including 4 new TestRunner_Build_*Hook tests + 6 TestRunPre/TestRunPost tests
+- [ ] Existing stripe-payments builds (still v1 schema) trigger normally — runner logs `==> no .dev/config.yaml — skipping service provisioning + hooks`, build still succeeds
+- [ ] Manual: extend the test fixture project with `hooks.pre_deploy: ["echo from pre"]` in `.dev/config.yaml` — push, observe build log shows `==> pre_deploy[1/1]: echo from pre` BEFORE `==> docker compose up -d`
+- [ ] Same project, change one pre-deploy hook to a deliberately-failing command (`exit 1`) — push, observe BUILD FAILED + the previous container still runs (`docker ps` confirms unchanged container ID)
+- [ ] Add `hooks.post_deploy: ["echo from post"]`, push — build succeeds, log shows `==> post_deploy[1/1]: echo from post` AFTER `==> docker compose up -d`
+- [ ] Make a post-deploy hook fail (`exit 1`) — build still marked success, log contains `WARNING: post_deploy hook 1 ("...") failed: ...`
 
 ## Plan 5 — Custom-domain + Let's Encrypt
 *(populated when plan 5 is written)*

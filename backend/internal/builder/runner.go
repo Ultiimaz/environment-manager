@@ -17,6 +17,7 @@ import (
 
 	"github.com/environment-manager/backend/internal/buildlog"
 	"github.com/environment-manager/backend/internal/credentials"
+	"github.com/environment-manager/backend/internal/hooks"
 	"github.com/environment-manager/backend/internal/iac"
 	"github.com/environment-manager/backend/internal/models"
 	"github.com/environment-manager/backend/internal/projects"
@@ -142,17 +143,19 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 		return r.fail(env, b, "render compose: "+err.Error())
 	}
 
-	// --- Plan 3b: parse iac config + provision services ---------------------
+	// --- Plan 3b/4: parse iac config; provision services + collect hooks ----
 	// Best-effort: missing/unparseable config → continue without service URLs.
 	servicesURLs := map[string]string{} // DATABASE_URL / REDIS_URL — merged into .env below
 	attachPaasNet := false              // toggled true if any service was provisioned
+	var iacCfg *iac.Config              // captured for hook-block use below; nil if absent or parse-failed
 
 	iacPath := filepath.Join(project.LocalPath, ".dev", "config.yaml")
-	if iacBytes, err := os.ReadFile(iacPath); err != nil {
-		_, _ = log.Write([]byte("==> no .dev/config.yaml — skipping service provisioning\n"))
+	if iacBytes, ferr := os.ReadFile(iacPath); ferr != nil {
+		_, _ = log.Write([]byte("==> no .dev/config.yaml — skipping service provisioning + hooks\n"))
 	} else if cfg, perr := iac.Parse(iacBytes); perr != nil {
-		_, _ = log.Write([]byte("WARNING: .dev/config.yaml parse failed; skipping service provisioning: " + perr.Error() + "\n"))
+		_, _ = log.Write([]byte("WARNING: .dev/config.yaml parse failed; skipping service provisioning + hooks: " + perr.Error() + "\n"))
 	} else {
+		iacCfg = cfg
 		if cfg.Services.Postgres {
 			if r.postgres == nil {
 				_, _ = log.Write([]byte("WARNING: services.postgres declared but provisioner not wired; skipping\n"))
@@ -242,22 +245,49 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 		}
 	}
 
-	_, _ = log.Write([]byte("==> docker compose up -d --build\n"))
 	// --project-directory makes relative paths in the compose file (build
 	// contexts, dockerfile paths) resolve from the user's repo root rather
 	// than from envDir where the rendered compose lives. Without this,
 	// `build: { context: . }` would point at envDir and fail to find the
 	// app's source tree.
-	composeArgs := []string{
+	composeBaseArgs := []string{
 		"-f", "docker-compose.yaml",
 		"-p", env.ID,
 		"--project-directory", project.LocalPath,
-		"up", "-d", "--build",
 	}
-	if err := r.exec.Compose(ctx, env.ID, envDir, composeArgs, log, log); err != nil {
+
+	_, _ = log.Write([]byte("==> docker compose build\n"))
+	buildArgs := append(append([]string(nil), composeBaseArgs...), "build")
+	if err := r.exec.Compose(ctx, env.ID, envDir, buildArgs, log, log); err != nil {
 		_, _ = log.Write([]byte("BUILD FAILED: " + err.Error() + "\n"))
 		return r.fail(env, b, err.Error())
 	}
+
+	// --- Plan 4: pre_deploy hooks -------------------------------------------
+	// iac.Parse guarantees Expose.Service is non-empty when iacCfg != nil,
+	// so no defensive check needed — see internal/iac/parse.go validation.
+	if iacCfg != nil && len(iacCfg.Hooks.PreDeploy) > 0 {
+		hookExec := r.newHookExecutor(iacCfg, env, project, envDir, log)
+		if err := hookExec.RunPre(ctx, iacCfg.Hooks.PreDeploy); err != nil {
+			_, _ = log.Write([]byte("ERROR: " + err.Error() + "\n"))
+			return r.fail(env, b, err.Error())
+		}
+	}
+	// ------------------------------------------------------------------------
+
+	_, _ = log.Write([]byte("==> docker compose up -d\n"))
+	upArgs := append(append([]string(nil), composeBaseArgs...), "up", "-d")
+	if err := r.exec.Compose(ctx, env.ID, envDir, upArgs, log, log); err != nil {
+		_, _ = log.Write([]byte("UP FAILED: " + err.Error() + "\n"))
+		return r.fail(env, b, err.Error())
+	}
+
+	// --- Plan 4: post_deploy hooks ------------------------------------------
+	if iacCfg != nil && len(iacCfg.Hooks.PostDeploy) > 0 {
+		hookExec := r.newHookExecutor(iacCfg, env, project, envDir, log)
+		hookExec.RunPost(ctx, iacCfg.Hooks.PostDeploy)
+	}
+	// ------------------------------------------------------------------------
 
 	now := time.Now().UTC()
 	b.FinishedAt = &now
@@ -339,6 +369,19 @@ func (r *Runner) Teardown(ctx context.Context, env *models.Environment) error {
 	}
 
 	return nil
+}
+
+// newHookExecutor constructs a hooks.Executor for the given build context.
+// Used by both pre and post-deploy hook blocks in Build.
+func (r *Runner) newHookExecutor(cfg *iac.Config, env *models.Environment, project *models.Project, envDir string, log io.Writer) *hooks.Executor {
+	return &hooks.Executor{
+		Compose:    r.exec,
+		Log:        log,
+		EnvID:      env.ID,
+		Workdir:    envDir,
+		ProjectDir: project.LocalPath,
+		Service:    cfg.Expose.Service,
+	}
 }
 
 // fail marks the build + env as failed and returns the error wrapped.
