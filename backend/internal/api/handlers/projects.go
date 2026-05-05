@@ -7,6 +7,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -15,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"go.uber.org/zap"
 
+	"github.com/environment-manager/backend/internal/builder"
 	"github.com/environment-manager/backend/internal/credentials"
 	"github.com/environment-manager/backend/internal/models"
 	"github.com/environment-manager/backend/internal/projects"
@@ -30,12 +32,15 @@ type ProjectsHandler struct {
 	credStore    *credentials.Store
 	logger       *zap.Logger
 	baseDomain   string
+	runner       *builder.Runner
 }
 
 // NewProjectsHandler wires the dependencies. baseDomain is the fallback
 // (e.g. "home") used by ComposeURL when ExternalDomain is unset; pass an
-// empty string to fall back to the literal "home" default.
-func NewProjectsHandler(store *projects.Store, reposManager *repos.Manager, credStore *credentials.Store, baseDomain string, logger *zap.Logger) *ProjectsHandler {
+// empty string to fall back to the literal "home" default. runner may be
+// nil — in that case the Delete handler skips per-env teardown (used by
+// tests that don't exercise the runner path).
+func NewProjectsHandler(store *projects.Store, reposManager *repos.Manager, credStore *credentials.Store, baseDomain string, logger *zap.Logger, runner *builder.Runner) *ProjectsHandler {
 	if baseDomain == "" {
 		baseDomain = "home"
 	}
@@ -45,6 +50,7 @@ func NewProjectsHandler(store *projects.Store, reposManager *repos.Manager, cred
 		credStore:    credStore,
 		logger:       logger,
 		baseDomain:   baseDomain,
+		runner:       runner,
 	}
 }
 
@@ -370,6 +376,74 @@ func (h *ProjectsHandler) GetSecret(w http.ResponseWriter, r *http.Request) {
 	_ = json.NewEncoder(w).Encode(map[string]string{
 		"key":   key,
 		"value": value,
+	})
+}
+
+// Delete handles DELETE /api/v1/projects/{id}.
+//
+// Tears down each environment via the runner (compose down -v + drop services
+// + cred cleanup), removes the project's repo dir, deletes the project's
+// credential-store entries, and finally removes the project row. Failures
+// during per-env teardown are logged but don't abort the rest of the cascade.
+func (h *ProjectsHandler) Delete(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if id == "" {
+		respondError(w, http.StatusBadRequest, "MISSING_ID", "id is required")
+		return
+	}
+	project, err := h.store.GetProject(id)
+	if err != nil {
+		if errors.Is(err, projects.ErrNotFound) {
+			respondError(w, http.StatusNotFound, "NOT_FOUND", "project not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "STORE_ERROR", err.Error())
+		return
+	}
+	envs, err := h.store.ListEnvironments(project.ID)
+	if err != nil {
+		respondError(w, http.StatusInternalServerError, "STORE_ERROR", err.Error())
+		return
+	}
+	// Tear down each env. Best-effort; collect errors for the response.
+	var teardownErrors []string
+	for _, env := range envs {
+		if h.runner != nil {
+			if terr := h.runner.Teardown(r.Context(), env); terr != nil {
+				teardownErrors = append(teardownErrors, env.ID+": "+terr.Error())
+				h.logger.Warn("project delete: env teardown failed",
+					zap.String("env_id", env.ID), zap.Error(terr))
+			}
+		}
+		if derr := h.store.DeleteEnvironment(project.ID, env.BranchSlug); derr != nil {
+			h.logger.Warn("project delete: DeleteEnvironment failed",
+				zap.String("env_id", env.ID), zap.Error(derr))
+		}
+	}
+	// Clean cred-store project secrets (best-effort).
+	if h.credStore != nil {
+		if keys, err := h.credStore.ListProjectSecretKeys(project.ID); err == nil {
+			for _, k := range keys {
+				_ = h.credStore.DeleteProjectSecret(project.ID, k)
+			}
+		}
+	}
+	// Remove the project row + project directory.
+	if err := h.store.DeleteProject(project.ID); err != nil {
+		respondError(w, http.StatusInternalServerError, "STORE_ERROR", err.Error())
+		return
+	}
+	if project.LocalPath != "" {
+		_ = os.RemoveAll(project.LocalPath)
+	}
+	if teardownErrors == nil {
+		teardownErrors = []string{}
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]any{
+		"deleted":         project.ID,
+		"teardown_errors": teardownErrors,
+		"environments":    len(envs),
 	})
 }
 

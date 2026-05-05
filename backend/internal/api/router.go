@@ -54,7 +54,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	webhookHandler := handlers.NewWebhookHandler(cfg.Logger)
 	webhookHandler.SetProjectsStore(cfg.ProjectsStore)
 	webhookHandler.SetRunner(cfg.Builder)
-	projectsHandler := handlers.NewProjectsHandler(cfg.ProjectsStore, cfg.ReposManager, cfg.CredentialStore, cfg.BaseDomain, cfg.Logger)
+	projectsHandler := handlers.NewProjectsHandler(cfg.ProjectsStore, cfg.ReposManager, cfg.CredentialStore, cfg.BaseDomain, cfg.Logger, cfg.Builder)
 	buildsHandler := handlers.NewBuildsHandler(cfg.ProjectsStore, cfg.Builder, cfg.DataDir, cfg.Logger)
 
 	// API routes
@@ -80,6 +80,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 				r.Use(handlers.BearerAuth(cfg.CredentialStore))
 			}
 			r.Post("/projects", projectsHandler.Create)
+			r.Delete("/projects/{id}", projectsHandler.Delete)
 			r.Get("/projects/{id}/secrets/{key}", projectsHandler.GetSecret)
 			r.Put("/projects/{id}/secrets", projectsHandler.SetSecrets)
 			r.Delete("/projects/{id}/secrets/{key}", projectsHandler.DeleteSecret)
