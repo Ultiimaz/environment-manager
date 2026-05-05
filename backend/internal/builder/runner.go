@@ -264,22 +264,13 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 	}
 
 	// --- Plan 4: pre_deploy hooks -------------------------------------------
+	// iac.Parse guarantees Expose.Service is non-empty when iacCfg != nil,
+	// so no defensive check needed — see internal/iac/parse.go validation.
 	if iacCfg != nil && len(iacCfg.Hooks.PreDeploy) > 0 {
-		if iacCfg.Expose.Service == "" {
-			_, _ = log.Write([]byte("WARNING: hooks.pre_deploy declared but expose.service is empty; skipping\n"))
-		} else {
-			hookExec := &hooks.Executor{
-				Compose:    r.exec,
-				Log:        log,
-				EnvID:      env.ID,
-				Workdir:    envDir,
-				ProjectDir: project.LocalPath,
-				Service:    iacCfg.Expose.Service,
-			}
-			if err := hookExec.RunPre(ctx, iacCfg.Hooks.PreDeploy); err != nil {
-				_, _ = log.Write([]byte("ERROR: " + err.Error() + "\n"))
-				return r.fail(env, b, err.Error())
-			}
+		hookExec := r.newHookExecutor(iacCfg, env, project, envDir, log)
+		if err := hookExec.RunPre(ctx, iacCfg.Hooks.PreDeploy); err != nil {
+			_, _ = log.Write([]byte("ERROR: " + err.Error() + "\n"))
+			return r.fail(env, b, err.Error())
 		}
 	}
 	// ------------------------------------------------------------------------
@@ -293,19 +284,8 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 
 	// --- Plan 4: post_deploy hooks ------------------------------------------
 	if iacCfg != nil && len(iacCfg.Hooks.PostDeploy) > 0 {
-		if iacCfg.Expose.Service == "" {
-			_, _ = log.Write([]byte("WARNING: hooks.post_deploy declared but expose.service is empty; skipping\n"))
-		} else {
-			hookExec := &hooks.Executor{
-				Compose:    r.exec,
-				Log:        log,
-				EnvID:      env.ID,
-				Workdir:    envDir,
-				ProjectDir: project.LocalPath,
-				Service:    iacCfg.Expose.Service,
-			}
-			hookExec.RunPost(ctx, iacCfg.Hooks.PostDeploy)
-		}
+		hookExec := r.newHookExecutor(iacCfg, env, project, envDir, log)
+		hookExec.RunPost(ctx, iacCfg.Hooks.PostDeploy)
 	}
 	// ------------------------------------------------------------------------
 
@@ -389,6 +369,19 @@ func (r *Runner) Teardown(ctx context.Context, env *models.Environment) error {
 	}
 
 	return nil
+}
+
+// newHookExecutor constructs a hooks.Executor for the given build context.
+// Used by both pre and post-deploy hook blocks in Build.
+func (r *Runner) newHookExecutor(cfg *iac.Config, env *models.Environment, project *models.Project, envDir string, log io.Writer) *hooks.Executor {
+	return &hooks.Executor{
+		Compose:    r.exec,
+		Log:        log,
+		EnvID:      env.ID,
+		Workdir:    envDir,
+		ProjectDir: project.LocalPath,
+		Service:    cfg.Expose.Service,
+	}
 }
 
 // fail marks the build + env as failed and returns the error wrapped.
