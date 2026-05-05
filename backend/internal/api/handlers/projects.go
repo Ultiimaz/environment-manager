@@ -336,6 +336,43 @@ func (h *ProjectsHandler) SetSecrets(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+// GetSecret handles GET /api/v1/projects/{id}/secrets/{key}.
+//
+// Requires query parameter `reveal=true` to return the value — without it,
+// returns 400 with a hint to use ListSecrets for the key list. This guards
+// against accidental exposure (e.g. someone sharing a screenshot of an
+// HTTP-debug tool).
+func (h *ProjectsHandler) GetSecret(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	key := chi.URLParam(r, "key")
+	if id == "" || key == "" {
+		respondError(w, http.StatusBadRequest, "MISSING_PARAM", "id and key required")
+		return
+	}
+	if r.URL.Query().Get("reveal") != "true" {
+		respondError(w, http.StatusBadRequest, "REVEAL_REQUIRED", "add ?reveal=true to retrieve the secret value (use /secrets to list keys)")
+		return
+	}
+	if h.credStore == nil {
+		respondError(w, http.StatusInternalServerError, "NO_CREDENTIAL_STORE", "credential store not configured")
+		return
+	}
+	value, err := h.credStore.GetProjectSecret(id, key)
+	if err != nil {
+		if errors.Is(err, credentials.ErrNotFound) {
+			respondError(w, http.StatusNotFound, "NOT_FOUND", "secret not found")
+			return
+		}
+		respondError(w, http.StatusInternalServerError, "STORE_ERROR", err.Error())
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"key":   key,
+		"value": value,
+	})
+}
+
 // DeleteSecret handles DELETE /api/v1/projects/{id}/secrets/{key}.
 func (h *ProjectsHandler) DeleteSecret(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")

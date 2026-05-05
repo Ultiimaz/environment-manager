@@ -71,8 +71,29 @@ After merge + redeploy:
 - [ ] Cross-project domain conflict detection deferred to a future plan
 - [ ] env-manager's own public hostname (manager.blocksweb.nl) deferred to Plan 6
 
-## Plan 6 — envm CLI
-*(populated when plan 6 is written)*
+## Plan 6a — Admin auth + envm CLI (secrets commands)
+
+After merge + redeploy:
+- [ ] `cd backend && go test ./...` — full suite green
+- [ ] env-manager startup log shows `==> env-manager admin token (save it now): envm_<64hex>` once on first boot only
+- [ ] Subsequent boots reuse the stored token without logging it
+- [ ] `curl -X POST -H "Authorization: Bearer wrong" https://<env-manager>/api/v1/projects` → 401
+- [ ] `curl -X POST -H "Authorization: Bearer <correct>" -H "Content-Type: application/json" --data '{"repo_url":"..."}' https://<env-manager>/api/v1/projects` → 201
+- [ ] GET endpoints (e.g. `/projects`) still work without Authorization
+- [ ] Webhook (`POST /webhook/github` with valid HMAC) still works without Bearer
+- [ ] `go install github.com/environment-manager/backend/cmd/envm@<branch>` produces a binary named `envm`
+- [ ] `envm version` prints `envm <version>`
+- [ ] `~/.envm/config.yaml` populated with endpoint + token; `envm config show` displays endpoint + masked token
+- [ ] `envm secrets list <project>` returns keys for a known project
+- [ ] `envm secrets set <project> KEY=value` succeeds and `envm secrets list` shows the new key
+- [ ] `envm secrets get <project> KEY --reveal` prints the value
+- [ ] `envm secrets get <project> KEY` (no `--reveal`) errors with a clear message
+- [ ] `envm secrets delete <project> KEY` removes the key
+- [ ] `envm secrets import <project> .env-fixture` bulk-imports
+- [ ] env-manager Docker image now ships `/usr/local/bin/envm` — `docker exec env-manager envm version` works
+
+## Plan 6b — Project/build/env/services CLI commands
+*(populated when Plan 6b is written)*
 
 ## Plan 7 — UI rebuild
 *(populated when plan 7 is written)*

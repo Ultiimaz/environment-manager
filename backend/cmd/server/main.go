@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"fmt"
 	"net/http"
 	"os"
@@ -46,6 +48,24 @@ func main() {
 	credStore, err := credentials.NewStore(cfg.DataDir+"/.credentials", credKey)
 	if err != nil {
 		logger.Warn("Failed to initialize credential store", zap.Error(err))
+	}
+
+	// Admin token bootstrap. Generate once on first boot, store encrypted in
+	// cred-store under "system:admin_token", log once. Subsequent boots reuse.
+	if credStore != nil {
+		if _, err := credStore.GetSystemSecret("system:admin_token"); err != nil {
+			rawBuf := make([]byte, 32)
+			if _, rerr := rand.Read(rawBuf); rerr != nil {
+				logger.Error("Failed to generate admin token", zap.Error(rerr))
+			} else {
+				token := "envm_" + hex.EncodeToString(rawBuf)
+				if serr := credStore.SaveSystemSecret("system:admin_token", token); serr != nil {
+					logger.Error("Failed to save admin token", zap.Error(serr))
+				} else {
+					logger.Info("==> env-manager admin token (save it now): " + token)
+				}
+			}
+		}
 	}
 
 	// Service-plane bootstrap + long-lived provisioners (Flow G + Plan 3b wiring).

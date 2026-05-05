@@ -232,3 +232,67 @@ func TestProjectsHandler_Get_NotFound(t *testing.T) {
 		t.Fatalf("status = %d, want 404", rec.Code)
 	}
 }
+
+func TestProjectsHandler_GetSecret(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := projects.NewStore(dir)
+	credKey := make([]byte, 32)
+	for i := range credKey {
+		credKey[i] = byte(i)
+	}
+	creds, err := credentials.NewStore(filepath.Join(dir, "creds.json"), credKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = store.SaveProject(&models.Project{ID: "p1", Name: "myapp"})
+	_ = creds.SaveProjectSecret("p1", "STRIPE_KEY", "sk_test_xyz")
+
+	h := NewProjectsHandler(store, nil, creds, "home", zap.NewNop())
+
+	t.Run("without reveal param returns 400", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/projects/p1/secrets/STRIPE_KEY", nil)
+		req = withChiURLParams(req, map[string]string{"id": "p1", "key": "STRIPE_KEY"})
+		rec := httptest.NewRecorder()
+		h.GetSecret(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Errorf("status = %d, want 400", rec.Code)
+		}
+	})
+
+	t.Run("with reveal=true returns the value", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/projects/p1/secrets/STRIPE_KEY?reveal=true", nil)
+		req = withChiURLParams(req, map[string]string{"id": "p1", "key": "STRIPE_KEY"})
+		rec := httptest.NewRecorder()
+		h.GetSecret(rec, req)
+		if rec.Code != http.StatusOK {
+			t.Errorf("status = %d, want 200", rec.Code)
+		}
+		var resp map[string]string
+		if err := json.NewDecoder(rec.Body).Decode(&resp); err != nil {
+			t.Fatal(err)
+		}
+		if resp["value"] != "sk_test_xyz" {
+			t.Errorf("value = %q, want sk_test_xyz", resp["value"])
+		}
+	})
+
+	t.Run("unknown key returns 404", func(t *testing.T) {
+		req := httptest.NewRequest("GET", "/api/v1/projects/p1/secrets/MISSING?reveal=true", nil)
+		req = withChiURLParams(req, map[string]string{"id": "p1", "key": "MISSING"})
+		rec := httptest.NewRecorder()
+		h.GetSecret(rec, req)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("status = %d, want 404", rec.Code)
+		}
+	})
+}
+
+// withChiURLParams installs URL params into a request's chi RouteContext so
+// handlers calling chi.URLParam(r, "id") get the expected value during tests.
+func withChiURLParams(req *http.Request, params map[string]string) *http.Request {
+	rctx := chi.NewRouteContext()
+	for k, v := range params {
+		rctx.URLParams.Add(k, v)
+	}
+	return req.WithContext(context.WithValue(req.Context(), chi.RouteCtxKey, rctx))
+}

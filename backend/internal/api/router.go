@@ -59,26 +59,32 @@ func NewRouter(cfg RouterConfig) http.Handler {
 
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
-		// Health
+		// Health (open)
 		r.Get("/health", handlers.HealthCheck)
 
-		// Projects (.dev/-based deploys)
-		r.Route("/projects", func(r chi.Router) {
-			r.Get("/", projectsHandler.List)
-			r.Post("/", projectsHandler.Create)
-			r.Get("/{id}", projectsHandler.Get)
-			r.Get("/{id}/secrets", projectsHandler.ListSecrets)
-			r.Put("/{id}/secrets", projectsHandler.SetSecrets)
-			r.Delete("/{id}/secrets/{key}", projectsHandler.DeleteSecret)
-		})
-
-		// Build trigger (WS log endpoint registered outside /api/v1)
-		r.Route("/envs", func(r chi.Router) {
-			r.Post("/{id}/build", buildsHandler.Trigger)
-		})
-
-		// Webhooks
+		// Webhooks (HMAC-secured separately — Bearer middleware does NOT apply)
 		r.Post("/webhook/github", webhookHandler.GitHub)
+
+		// Read-only project endpoints (open on LAN per v2 design)
+		r.Get("/projects", projectsHandler.List)
+		r.Get("/projects/{id}", projectsHandler.Get)
+		r.Get("/projects/{id}/secrets", projectsHandler.ListSecrets)
+
+		// Mutating endpoints — require admin token. Bearer middleware skipped
+		// when credStore is nil (early-boot / no-key dev mode); in that mode
+		// the token is unset and the previous behaviour (open) is preserved.
+		// New routes go inside this single Group so adding them in 6b doesn't
+		// require touching two arms.
+		r.Group(func(r chi.Router) {
+			if cfg.CredentialStore != nil {
+				r.Use(handlers.BearerAuth(cfg.CredentialStore))
+			}
+			r.Post("/projects", projectsHandler.Create)
+			r.Get("/projects/{id}/secrets/{key}", projectsHandler.GetSecret)
+			r.Put("/projects/{id}/secrets", projectsHandler.SetSecrets)
+			r.Delete("/projects/{id}/secrets/{key}", projectsHandler.DeleteSecret)
+			r.Post("/envs/{id}/build", buildsHandler.Trigger)
+		})
 	})
 
 	// WebSocket routes
