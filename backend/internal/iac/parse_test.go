@@ -436,3 +436,100 @@ secrets:
 		t.Fatalf("expected error to mention duplicate, got %q", err.Error())
 	}
 }
+
+func TestParse_HooksHappyPath(t *testing.T) {
+	input := []byte(`project_name: app
+expose:
+  service: app
+  port: 80
+hooks:
+  pre_deploy:
+    - php artisan migrate --force
+    - php artisan config:cache
+  post_deploy:
+    - php artisan queue:restart
+`)
+	got, err := Parse(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	wantPre := []string{"php artisan migrate --force", "php artisan config:cache"}
+	wantPost := []string{"php artisan queue:restart"}
+	if !reflect.DeepEqual(got.Hooks.PreDeploy, wantPre) {
+		t.Fatalf("pre_deploy: got %v want %v", got.Hooks.PreDeploy, wantPre)
+	}
+	if !reflect.DeepEqual(got.Hooks.PostDeploy, wantPost) {
+		t.Fatalf("post_deploy: got %v want %v", got.Hooks.PostDeploy, wantPost)
+	}
+}
+
+func TestParse_HooksOptional(t *testing.T) {
+	input := []byte(`project_name: app
+expose:
+  service: app
+  port: 80
+`)
+	got, err := Parse(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Hooks.PreDeploy != nil || got.Hooks.PostDeploy != nil {
+		t.Fatalf("expected nil hook lists, got pre=%v post=%v", got.Hooks.PreDeploy, got.Hooks.PostDeploy)
+	}
+}
+
+func TestParse_HooksRejectEmptyCommand(t *testing.T) {
+	cases := []struct {
+		name  string
+		input string
+		match string
+	}{
+		{
+			"empty pre_deploy command",
+			`project_name: app
+expose:
+  service: app
+  port: 80
+hooks:
+  pre_deploy:
+    - ""
+`,
+			"hooks.pre_deploy",
+		},
+		{
+			"whitespace pre_deploy command",
+			`project_name: app
+expose:
+  service: app
+  port: 80
+hooks:
+  pre_deploy:
+    - "   "
+`,
+			"hooks.pre_deploy",
+		},
+		{
+			"empty post_deploy command",
+			`project_name: app
+expose:
+  service: app
+  port: 80
+hooks:
+  post_deploy:
+    - ""
+`,
+			"hooks.post_deploy",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Parse([]byte(tc.input))
+			if err == nil {
+				t.Fatalf("expected error for empty command, got nil")
+			}
+			if !strings.Contains(err.Error(), tc.match) {
+				t.Fatalf("expected error to mention %q, got %q", tc.match, err.Error())
+			}
+		})
+	}
+}

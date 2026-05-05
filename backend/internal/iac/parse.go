@@ -80,6 +80,16 @@ func validate(c *Config) error {
 		}
 		seenSecrets[s] = true
 	}
+	for i, h := range c.Hooks.PreDeploy {
+		if strings.TrimSpace(h) == "" {
+			return fmt.Errorf("%w: hooks.pre_deploy[%d] must be non-empty", ErrInvalidConfig, i)
+		}
+	}
+	for i, h := range c.Hooks.PostDeploy {
+		if strings.TrimSpace(h) == "" {
+			return fmt.Errorf("%w: hooks.post_deploy[%d] must be non-empty", ErrInvalidConfig, i)
+		}
+	}
 	return nil
 }
 
