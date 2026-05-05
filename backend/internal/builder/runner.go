@@ -78,16 +78,17 @@ func (DockerComposeExecutor) Compose(ctx context.Context, projectName, workdir s
 // Runner builds an Environment: render compose, run `up -d --build`,
 // update Store with results.
 type Runner struct {
-	store        *projects.Store
-	exec         ComposeExecutor
-	dataDir      string
-	proxyNetwork string
-	queue        *Queue
-	logger       *zap.Logger
-	logRing      int // ring buffer size for buildlog.Log
-	credStore    *credentials.Store
-	postgres     PostgresProvisioner // nil = postgres provisioning disabled
-	redis        RedisProvisioner    // nil = redis provisioning disabled
+	store            *projects.Store
+	exec             ComposeExecutor
+	dataDir          string
+	proxyNetwork     string
+	queue            *Queue
+	logger           *zap.Logger
+	logRing          int // ring buffer size for buildlog.Log
+	credStore        *credentials.Store
+	postgres         PostgresProvisioner // nil = postgres provisioning disabled
+	redis            RedisProvisioner    // nil = redis provisioning disabled
+	letsencryptEmail string              // "" = LE disabled, public domains serve HTTP only
 }
 
 // NewRunner constructs a Runner. proxyNetwork is the name of the external
@@ -232,7 +233,20 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 
 	composePath := filepath.Join(envDir, "docker-compose.yaml")
 	_, _ = log.Write([]byte("==> injecting traefik labels\n"))
-	if err := InjectTraefikLabels(composePath, env, project.Expose, TraefikOptions{ProxyNetwork: r.proxyNetwork}); err != nil {
+	traefikOpts := TraefikOptions{
+		ProxyNetwork:     r.proxyNetwork,
+		LetsencryptEmail: r.letsencryptEmail,
+	}
+	if iacCfg != nil {
+		traefikOpts.Domains = &iacCfg.Domains
+		// Surface a one-time warning if the operator declared public domains
+		// but didn't set LETSENCRYPT_EMAIL — the labels still emit HTTP-only
+		// routers, but TLS/redirect/LE won't apply.
+		if r.letsencryptEmail == "" && hasPublicDomains(env, &iacCfg.Domains) {
+			_, _ = log.Write([]byte("WARNING: domains declared but LETSENCRYPT_EMAIL is unset; public domains will serve HTTP only\n"))
+		}
+	}
+	if err := InjectTraefikLabels(composePath, env, project.Expose, traefikOpts); err != nil {
 		_, _ = log.Write([]byte("ERROR: " + err.Error() + "\n"))
 		return r.fail(env, b, "inject traefik labels: "+err.Error())
 	}
@@ -405,4 +419,26 @@ func (r *Runner) fail(env *models.Environment, b *models.Build, msg string) erro
 func (r *Runner) SetServiceProvisioners(pg PostgresProvisioner, rd RedisProvisioner) {
 	r.postgres = pg
 	r.redis = rd
+}
+
+// SetLetsencryptEmail wires the Let's Encrypt email used by the v2 Traefik
+// label generator. Empty string means LE is disabled — public domains will
+// fall back to plain HTTP routers and the build log will warn.
+func (r *Runner) SetLetsencryptEmail(email string) {
+	r.letsencryptEmail = email
+}
+
+// hasPublicDomains returns true when the env will receive any non-.home
+// router. Used by the runner to surface a warning when LE is unset.
+func hasPublicDomains(env *models.Environment, d *iac.Domains) bool {
+	if d == nil {
+		return false
+	}
+	switch env.Kind {
+	case models.EnvKindProd:
+		return len(d.Prod) > 0
+	case models.EnvKindPreview:
+		return d.Preview.Pattern != ""
+	}
+	return false
 }
