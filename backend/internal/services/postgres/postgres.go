@@ -113,3 +113,87 @@ func SlugDatabaseName(projectName, branchSlug string) string {
 	branch := strings.ReplaceAll(strings.ToLower(branchSlug), "-", "_")
 	return project + "_" + branch
 }
+
+// EnsureService idempotently brings the singleton paas-postgres container into
+// a running, ready-to-accept-connections state. Safe to call on every boot.
+//
+// Behaviour:
+//   - paas-net is ensured to exist before the container is launched.
+//   - If the container is running, returns nil after a sanity ready-check.
+//   - If the container exists but is stopped, starts it and waits for ready.
+//   - If absent, creates the volume-backed container with a generated
+//     superuser password (or reuses one from the credential store).
+func (p *Provisioner) EnsureService(ctx context.Context) error {
+	if err := p.docker.EnsureBridgeNetwork(ctx, NetworkName); err != nil {
+		return fmt.Errorf("ensure paas-net: %w", err)
+	}
+
+	exists, running, err := p.docker.ContainerStatus(ctx, ContainerName)
+	if err != nil {
+		return fmt.Errorf("inspect %s: %w", ContainerName, err)
+	}
+	switch {
+	case exists && running:
+		return p.waitReady(ctx)
+	case exists && !running:
+		if err := p.docker.StartContainer(ContainerName); err != nil {
+			return fmt.Errorf("start %s: %w", ContainerName, err)
+		}
+		return p.waitReady(ctx)
+	}
+
+	pw, err := p.creds.GetSystemSecret(SuperuserKey)
+	if err != nil {
+		// First boot — generate and persist.
+		generated, gerr := p.passwordGen()
+		if gerr != nil {
+			return fmt.Errorf("generate superuser password: %w", gerr)
+		}
+		if serr := p.creds.SaveSystemSecret(SuperuserKey, generated); serr != nil {
+			return fmt.Errorf("save superuser password: %w", serr)
+		}
+		pw = generated
+	}
+
+	spec := RunSpec{
+		Name:    ContainerName,
+		Image:   Image,
+		Network: NetworkName,
+		Volumes: map[string]string{VolumeName: MountPath},
+		Env:     map[string]string{"POSTGRES_PASSWORD": pw},
+		Labels: map[string]string{
+			"env-manager.managed":   "true",
+			"env-manager.singleton": "postgres",
+		},
+	}
+	if err := p.docker.RunContainer(ctx, spec); err != nil {
+		return fmt.Errorf("run %s: %w", ContainerName, err)
+	}
+	return p.waitReady(ctx)
+}
+
+// waitReady polls pg_isready inside the container until exit code 0 or the
+// context deadline is hit. Internal helper.
+func (p *Provisioner) waitReady(ctx context.Context) error {
+	deadline, hasDeadline := ctx.Deadline()
+	if !hasDeadline {
+		var cancel context.CancelFunc
+		ctx, cancel = context.WithTimeout(ctx, readyTimeout)
+		defer cancel()
+		deadline, _ = ctx.Deadline()
+	}
+	for {
+		stdout, stderr, code, err := p.docker.ExecCommand(ctx, ContainerName, []string{"pg_isready", "-U", "postgres"})
+		if err == nil && code == 0 {
+			return nil
+		}
+		if p.now().After(deadline) {
+			return fmt.Errorf("paas-postgres not ready before deadline: code=%d stdout=%q stderr=%q lastErr=%v", code, stdout, stderr, err)
+		}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("paas-postgres ready wait cancelled: %w", ctx.Err())
+		case <-time.After(readyInterval):
+		}
+	}
+}

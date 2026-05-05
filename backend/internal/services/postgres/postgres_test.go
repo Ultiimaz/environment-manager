@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"time"
 )
 
 // fakeDocker captures every call so tests can assert the exact sequence.
@@ -155,5 +156,126 @@ func TestSlugDatabaseName(t *testing.T) {
 				t.Errorf("got %q want %q", got, tc.want)
 			}
 		})
+	}
+}
+
+func TestEnsureService_FreshBoot(t *testing.T) {
+	fd := &fakeDocker{
+		statuses: map[string]containerState{},
+		execResults: []execResult{
+			// pg_isready succeeds first poll
+			{exitCode: 0},
+		},
+	}
+	fc := newFakeCreds()
+	p := newTestProvisioner(t, fd, fc)
+
+	if err := p.EnsureService(context.Background()); err != nil {
+		t.Fatalf("EnsureService: %v", err)
+	}
+
+	// Network ensured
+	if len(fd.netCalls) != 1 || fd.netCalls[0] != NetworkName {
+		t.Fatalf("expected single EnsureBridgeNetwork(%q), got %v", NetworkName, fd.netCalls)
+	}
+	// Container created with the right spec
+	if len(fd.runCalls) != 1 {
+		t.Fatalf("expected 1 RunContainer call, got %d", len(fd.runCalls))
+	}
+	spec := fd.runCalls[0]
+	if spec.Name != ContainerName || spec.Image != Image || spec.Network != NetworkName {
+		t.Errorf("unexpected spec: %+v", spec)
+	}
+	if spec.Volumes[VolumeName] != MountPath {
+		t.Errorf("volume mount wrong: %v", spec.Volumes)
+	}
+	if spec.Env["POSTGRES_PASSWORD"] == "" {
+		t.Errorf("POSTGRES_PASSWORD not set")
+	}
+	if spec.Labels["env-manager.singleton"] != "postgres" {
+		t.Errorf("singleton label missing")
+	}
+	// Superuser password persisted
+	saved, err := fc.GetSystemSecret(SuperuserKey)
+	if err != nil || saved != spec.Env["POSTGRES_PASSWORD"] {
+		t.Errorf("password not persisted (saved=%q, env=%q, err=%v)", saved, spec.Env["POSTGRES_PASSWORD"], err)
+	}
+	// pg_isready was attempted at least once
+	if len(fd.execCalls) == 0 {
+		t.Error("expected pg_isready exec, got none")
+	}
+}
+
+func TestEnsureService_ReusesStoredPassword(t *testing.T) {
+	fd := &fakeDocker{
+		statuses:    map[string]containerState{},
+		execResults: []execResult{{exitCode: 0}},
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "previously-saved-password")
+	p := newTestProvisioner(t, fd, fc)
+
+	if err := p.EnsureService(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if fd.runCalls[0].Env["POSTGRES_PASSWORD"] != "previously-saved-password" {
+		t.Errorf("expected stored pw to be reused, got %q", fd.runCalls[0].Env["POSTGRES_PASSWORD"])
+	}
+	// passwordGen NOT consumed when stored pw exists.
+}
+
+func TestEnsureService_RunningIsNoop(t *testing.T) {
+	fd := &fakeDocker{
+		statuses: map[string]containerState{
+			ContainerName: {exists: true, running: true},
+		},
+	}
+	fc := newFakeCreds()
+	p := newTestProvisioner(t, fd, fc)
+
+	if err := p.EnsureService(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(fd.runCalls) != 0 {
+		t.Errorf("expected no RunContainer when already running, got %d calls", len(fd.runCalls))
+	}
+	if len(fd.startCalls) != 0 {
+		t.Errorf("expected no StartContainer when already running, got %d calls", len(fd.startCalls))
+	}
+}
+
+func TestEnsureService_StoppedIsStarted(t *testing.T) {
+	fd := &fakeDocker{
+		statuses: map[string]containerState{
+			ContainerName: {exists: true, running: false},
+		},
+		execResults: []execResult{{exitCode: 0}},
+	}
+	fc := newFakeCreds()
+	p := newTestProvisioner(t, fd, fc)
+
+	if err := p.EnsureService(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if len(fd.startCalls) != 1 || fd.startCalls[0] != ContainerName {
+		t.Errorf("expected single StartContainer(%q), got %v", ContainerName, fd.startCalls)
+	}
+}
+
+func TestEnsureService_ReadyTimeout(t *testing.T) {
+	// Force pg_isready to always return non-zero.
+	fd := &fakeDocker{
+		statuses:    map[string]containerState{},
+		execResults: []execResult{{exitCode: 1, stderr: "not ready"}},
+	}
+	fc := newFakeCreds()
+	p := newTestProvisioner(t, fd, fc)
+	// Tighten timeout so the test runs fast.
+	ctx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	err := p.EnsureService(ctx)
+	if err == nil {
+		t.Fatal("expected timeout error")
 	}
 }
