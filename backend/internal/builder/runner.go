@@ -17,6 +17,7 @@ import (
 
 	"github.com/environment-manager/backend/internal/buildlog"
 	"github.com/environment-manager/backend/internal/credentials"
+	"github.com/environment-manager/backend/internal/hooks"
 	"github.com/environment-manager/backend/internal/iac"
 	"github.com/environment-manager/backend/internal/models"
 	"github.com/environment-manager/backend/internal/projects"
@@ -142,17 +143,19 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 		return r.fail(env, b, "render compose: "+err.Error())
 	}
 
-	// --- Plan 3b: parse iac config + provision services ---------------------
+	// --- Plan 3b/4: parse iac config; provision services + collect hooks ----
 	// Best-effort: missing/unparseable config → continue without service URLs.
 	servicesURLs := map[string]string{} // DATABASE_URL / REDIS_URL — merged into .env below
 	attachPaasNet := false              // toggled true if any service was provisioned
+	var iacCfg *iac.Config              // captured for hook-block use below; nil if absent or parse-failed
 
 	iacPath := filepath.Join(project.LocalPath, ".dev", "config.yaml")
-	if iacBytes, err := os.ReadFile(iacPath); err != nil {
-		_, _ = log.Write([]byte("==> no .dev/config.yaml — skipping service provisioning\n"))
+	if iacBytes, ferr := os.ReadFile(iacPath); ferr != nil {
+		_, _ = log.Write([]byte("==> no .dev/config.yaml — skipping service provisioning + hooks\n"))
 	} else if cfg, perr := iac.Parse(iacBytes); perr != nil {
-		_, _ = log.Write([]byte("WARNING: .dev/config.yaml parse failed; skipping service provisioning: " + perr.Error() + "\n"))
+		_, _ = log.Write([]byte("WARNING: .dev/config.yaml parse failed; skipping service provisioning + hooks: " + perr.Error() + "\n"))
 	} else {
+		iacCfg = cfg
 		if cfg.Services.Postgres {
 			if r.postgres == nil {
 				_, _ = log.Write([]byte("WARNING: services.postgres declared but provisioner not wired; skipping\n"))
@@ -260,7 +263,26 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 		return r.fail(env, b, err.Error())
 	}
 
-	// (Plan 4 inserts pre_deploy hooks here.)
+	// --- Plan 4: pre_deploy hooks -------------------------------------------
+	if iacCfg != nil && len(iacCfg.Hooks.PreDeploy) > 0 {
+		if iacCfg.Expose.Service == "" {
+			_, _ = log.Write([]byte("WARNING: hooks.pre_deploy declared but expose.service is empty; skipping\n"))
+		} else {
+			hookExec := &hooks.Executor{
+				Compose:    r.exec,
+				Log:        log,
+				EnvID:      env.ID,
+				Workdir:    envDir,
+				ProjectDir: project.LocalPath,
+				Service:    iacCfg.Expose.Service,
+			}
+			if err := hookExec.RunPre(ctx, iacCfg.Hooks.PreDeploy); err != nil {
+				_, _ = log.Write([]byte("ERROR: " + err.Error() + "\n"))
+				return r.fail(env, b, err.Error())
+			}
+		}
+	}
+	// ------------------------------------------------------------------------
 
 	_, _ = log.Write([]byte("==> docker compose up -d\n"))
 	upArgs := append(append([]string(nil), composeBaseArgs...), "up", "-d")
