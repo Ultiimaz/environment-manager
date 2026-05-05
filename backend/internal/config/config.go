@@ -7,13 +7,14 @@ import (
 
 // Config holds the application configuration
 type Config struct {
-	Port         int
-	DataDir      string
-	StaticDir    string
-	GitRemote    string
-	BaseDomain   string
-	TraefikIP    string
-	ProxyNetwork string
+	Port             int
+	DataDir          string
+	StaticDir        string
+	GitRemote        string
+	BaseDomain       string
+	TraefikIP        string
+	ProxyNetwork     string
+	LetsencryptEmail string // empty = LE disabled, public domains fall back to HTTP
 }
 
 // Load loads configuration from environment variables
@@ -51,13 +52,16 @@ func Load() (*Config, error) {
 		proxyNetwork = "env-manager-net"
 	}
 
+	letsencryptEmail := os.Getenv("LETSENCRYPT_EMAIL")
+
 	return &Config{
-		Port:         port,
-		DataDir:      dataDir,
-		StaticDir:    staticDir,
-		GitRemote:    gitRemote,
-		BaseDomain:   baseDomain,
-		TraefikIP:    traefikIP,
-		ProxyNetwork: proxyNetwork,
+		Port:             port,
+		DataDir:          dataDir,
+		StaticDir:        staticDir,
+		GitRemote:        gitRemote,
+		BaseDomain:       baseDomain,
+		TraefikIP:        traefikIP,
+		ProxyNetwork:     proxyNetwork,
+		LetsencryptEmail: letsencryptEmail,
 	}, nil
 }

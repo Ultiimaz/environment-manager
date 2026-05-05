@@ -872,3 +872,96 @@ hooks:
 		t.Errorf("env status = %v, want running", gotEnv.Status)
 	}
 }
+
+func TestRunner_Build_V2DomainsLabelsAppliedFromIac(t *testing.T) {
+	r, store, project, env, dataDir, exec := newRunnerTest(t)
+	_ = r
+
+	devCfg := `project_name: myapp
+expose:
+  service: app
+  port: 80
+domains:
+  prod:
+    - blocksweb.nl
+`
+	if err := os.WriteFile(filepath.Join(project.LocalPath, ".dev", "config.yaml"), []byte(devCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+	// project.Expose feeds InjectTraefikLabels' target resolution; mirror
+	// what would normally be persisted from the .dev config at project create.
+	project.Expose = &models.ExposeSpec{Service: "app", Port: 80}
+	if err := store.SaveProject(project); err != nil {
+		t.Fatal(err)
+	}
+
+	// proxyNetwork must be non-empty for InjectTraefikLabels to run.
+	r2 := NewRunner(store, exec, dataDir, "my-net", NewQueue(), zap.NewNop(), nil)
+	r2.SetLetsencryptEmail("ops@example.com")
+
+	build := &models.Build{
+		ID: "b1", EnvID: env.ID, SHA: "abc",
+		TriggeredBy: models.BuildTriggerManual,
+		Status:      models.BuildStatusRunning,
+	}
+	_ = store.SaveBuild("p1", build)
+
+	if err := r2.Build(context.Background(), env, build); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	composePath := filepath.Join(dataDir, "envs", env.ID, "docker-compose.yaml")
+	data, err := os.ReadFile(composePath)
+	if err != nil {
+		t.Fatalf("read compose: %v", err)
+	}
+	out := string(data)
+	if !strings.Contains(out, "p1--main-home") {
+		t.Errorf("expected -home router; got:\n%s", out)
+	}
+	if !strings.Contains(out, "p1--main-public") {
+		t.Errorf("expected -public router; got:\n%s", out)
+	}
+	if !strings.Contains(out, "letsencrypt") {
+		t.Errorf("expected letsencrypt resolver; got:\n%s", out)
+	}
+}
+
+func TestRunner_Build_V2DomainsWarnsWhenLeUnset(t *testing.T) {
+	r, store, project, env, dataDir, exec := newRunnerTest(t)
+	_ = r
+
+	devCfg := `project_name: myapp
+expose:
+  service: app
+  port: 80
+domains:
+  prod:
+    - blocksweb.nl
+`
+	if err := os.WriteFile(filepath.Join(project.LocalPath, ".dev", "config.yaml"), []byte(devCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	r2 := NewRunner(store, exec, dataDir, "my-net", NewQueue(), zap.NewNop(), nil)
+	// Don't call SetLetsencryptEmail — leaves it empty.
+
+	build := &models.Build{
+		ID: "b1", EnvID: env.ID, SHA: "abc",
+		TriggeredBy: models.BuildTriggerManual,
+		Status:      models.BuildStatusRunning,
+	}
+	_ = store.SaveBuild("p1", build)
+
+	if err := r2.Build(context.Background(), env, build); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+
+	logBytes, err := os.ReadFile(filepath.Join(dataDir, "builds", env.ID, "latest.log"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(logBytes), "LETSENCRYPT_EMAIL is unset") {
+		t.Errorf("expected LE-unset warning in build log; got:\n%s", logBytes)
+	}
+}

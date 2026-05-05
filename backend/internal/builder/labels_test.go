@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/environment-manager/backend/internal/iac"
 	"github.com/environment-manager/backend/internal/models"
 )
 
@@ -38,7 +39,7 @@ func TestInjectTraefikLabels_EmptyProxyNetwork(t *testing.T) {
 	original := "services:\n  web:\n    image: nginx\n    ports:\n      - \"80:80\"\n"
 	path := writeCompose(t, dir, original)
 
-	err := InjectTraefikLabels(path, testEnv("e1", "app.home"), nil, "")
+	err := InjectTraefikLabels(path, testEnv("e1", "app.home"), nil, TraefikOptions{})
 	if err != nil {
 		t.Fatalf("expected nil, got %v", err)
 	}
@@ -65,7 +66,7 @@ func TestInjectTraefikLabels_ExplicitExpose(t *testing.T) {
 	expose := &models.ExposeSpec{Service: "web", Port: 3000}
 	env := testEnv("proj--main", "myapp.home")
 
-	if err := InjectTraefikLabels(path, env, expose, "my-macvlan-net"); err != nil {
+	if err := InjectTraefikLabels(path, env, expose, TraefikOptions{ProxyNetwork: "my-macvlan-net"}); err != nil {
 		t.Fatalf("InjectTraefikLabels: %v", err)
 	}
 
@@ -100,7 +101,7 @@ func TestInjectTraefikLabels_PortsConvention(t *testing.T) {
 	path := writeCompose(t, dir, input)
 	env := testEnv("p1--dev", "app.dev.home")
 
-	if err := InjectTraefikLabels(path, env, nil, "proxy-net"); err != nil {
+	if err := InjectTraefikLabels(path, env, nil, TraefikOptions{ProxyNetwork: "proxy-net"}); err != nil {
 		t.Fatalf("InjectTraefikLabels: %v", err)
 	}
 
@@ -124,7 +125,7 @@ func TestInjectTraefikLabels_BarePort(t *testing.T) {
 	path := writeCompose(t, dir, input)
 	env := testEnv("p2--main", "bare.home")
 
-	if err := InjectTraefikLabels(path, env, nil, "net"); err != nil {
+	if err := InjectTraefikLabels(path, env, nil, TraefikOptions{ProxyNetwork: "net"}); err != nil {
 		t.Fatalf("InjectTraefikLabels: %v", err)
 	}
 
@@ -139,7 +140,7 @@ func TestInjectTraefikLabels_NoTarget(t *testing.T) {
 	original := "services:\n  app:\n    image: alpine\n"
 	path := writeCompose(t, dir, original)
 
-	if err := InjectTraefikLabels(path, testEnv("e1", "x.home"), nil, "net"); err != nil {
+	if err := InjectTraefikLabels(path, testEnv("e1", "x.home"), nil, TraefikOptions{ProxyNetwork: "net"}); err != nil {
 		t.Fatalf("InjectTraefikLabels: %v", err)
 	}
 
@@ -166,7 +167,7 @@ func TestInjectTraefikLabels_PreservesOtherServices(t *testing.T) {
 `
 	path := writeCompose(t, dir, input)
 
-	if err := InjectTraefikLabels(path, testEnv("p--main", "app.home"), nil, "macvlan"); err != nil {
+	if err := InjectTraefikLabels(path, testEnv("p--main", "app.home"), nil, TraefikOptions{ProxyNetwork: "macvlan"}); err != nil {
 		t.Fatalf("InjectTraefikLabels: %v", err)
 	}
 
@@ -188,10 +189,10 @@ func TestInjectTraefikLabels_IdempotentLabels(t *testing.T) {
 	path := writeCompose(t, dir, input)
 	env := testEnv("p--main", "app.home")
 
-	if err := InjectTraefikLabels(path, env, nil, "macvlan"); err != nil {
+	if err := InjectTraefikLabels(path, env, nil, TraefikOptions{ProxyNetwork: "macvlan"}); err != nil {
 		t.Fatalf("first inject: %v", err)
 	}
-	if err := InjectTraefikLabels(path, env, nil, "macvlan"); err != nil {
+	if err := InjectTraefikLabels(path, env, nil, TraefikOptions{ProxyNetwork: "macvlan"}); err != nil {
 		t.Fatalf("second inject: %v", err)
 	}
 
@@ -215,7 +216,7 @@ func TestInjectTraefikLabels_LongFormPort(t *testing.T) {
 	path := writeCompose(t, dir, input)
 	env := testEnv("p--main", "app.home")
 
-	if err := InjectTraefikLabels(path, env, nil, "net"); err != nil {
+	if err := InjectTraefikLabels(path, env, nil, TraefikOptions{ProxyNetwork: "net"}); err != nil {
 		t.Fatalf("InjectTraefikLabels: %v", err)
 	}
 
@@ -227,5 +228,232 @@ func mustContain(t *testing.T, haystack, needle string) {
 	t.Helper()
 	if !strings.Contains(haystack, needle) {
 		t.Errorf("expected output to contain %q\ngot:\n%s", needle, haystack)
+	}
+}
+
+func TestInjectTraefikLabels_V2_HomeAndPublicRouters(t *testing.T) {
+	dir := t.TempDir()
+	input := "services:\n  app:\n    image: alpine\n"
+	path := writeCompose(t, dir, input)
+
+	env := &models.Environment{
+		ID:         "stripe--main",
+		URL:        "stripe-payments.home",
+		Kind:       models.EnvKindProd,
+		BranchSlug: "main",
+	}
+	domains := &iac.Domains{
+		Prod: []string{"blocksweb.nl", "www.blocksweb.nl"},
+	}
+	err := InjectTraefikLabels(path, env, &models.ExposeSpec{Service: "app", Port: 80}, TraefikOptions{
+		ProxyNetwork:     "my-net",
+		Domains:          domains,
+		LetsencryptEmail: "ops@example.com",
+	})
+	if err != nil {
+		t.Fatalf("InjectTraefikLabels: %v", err)
+	}
+	out := readCompose(t, path)
+
+	// Home router: HTTP entrypoint, Host(`stripe-payments.home`).
+	mustContain(t, out, "traefik.http.routers.stripe--main-home.rule=Host(`stripe-payments.home`)")
+	mustContain(t, out, "traefik.http.routers.stripe--main-home.entrypoints=web")
+
+	// Public router: HTTPS entrypoint, Host union, TLS+LE.
+	mustContain(t, out, "traefik.http.routers.stripe--main-public.rule=Host(`blocksweb.nl`) || Host(`www.blocksweb.nl`)")
+	mustContain(t, out, "traefik.http.routers.stripe--main-public.entrypoints=websecure")
+	mustContain(t, out, "traefik.http.routers.stripe--main-public.tls=true")
+	mustContain(t, out, "traefik.http.routers.stripe--main-public.tls.certresolver=letsencrypt")
+
+	// Backend service definition still points at the exposed port.
+	mustContain(t, out, "traefik.http.services.stripe--main.loadbalancer.server.port=80")
+}
+
+func TestInjectTraefikLabels_V2_DomainsNilUsesLegacyPath(t *testing.T) {
+	// Confirm the v1 path still emits exactly the legacy single router.
+	dir := t.TempDir()
+	input := "services:\n  app:\n    image: alpine\n"
+	path := writeCompose(t, dir, input)
+
+	env := &models.Environment{ID: "p--main", URL: "myapp.home", Kind: models.EnvKindProd}
+	err := InjectTraefikLabels(path, env, &models.ExposeSpec{Service: "app", Port: 8080}, TraefikOptions{
+		ProxyNetwork: "my-net",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := readCompose(t, path)
+	// Legacy single router uses unsuffixed env-id.
+	mustContain(t, out, "traefik.http.routers.p--main.rule=Host(`myapp.home`)")
+	mustContain(t, out, "traefik.http.routers.p--main.entrypoints=web")
+	// No -home or -public suffixes when Domains is nil.
+	if strings.Contains(out, "p--main-home") || strings.Contains(out, "p--main-public") {
+		t.Errorf("legacy path should not emit -home or -public routers; got:\n%s", out)
+	}
+}
+
+func TestInjectTraefikLabels_V2_LeEmailEmptyFallbackToHttp(t *testing.T) {
+	dir := t.TempDir()
+	input := "services:\n  app:\n    image: alpine\n"
+	path := writeCompose(t, dir, input)
+
+	env := &models.Environment{ID: "p--main", URL: "myapp.home", Kind: models.EnvKindProd}
+	err := InjectTraefikLabels(path, env, &models.ExposeSpec{Service: "app", Port: 80}, TraefikOptions{
+		ProxyNetwork:     "my-net",
+		Domains:          &iac.Domains{Prod: []string{"blocksweb.nl"}},
+		LetsencryptEmail: "", // unset
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := readCompose(t, path)
+	// Public router exists but on web entrypoint (no TLS, no LE).
+	mustContain(t, out, "traefik.http.routers.p--main-public.rule=Host(`blocksweb.nl`)")
+	mustContain(t, out, "traefik.http.routers.p--main-public.entrypoints=web")
+	// No tls=true label.
+	if strings.Contains(out, "p--main-public.tls=true") {
+		t.Errorf("expected no TLS label when LetsencryptEmail is empty; got:\n%s", out)
+	}
+}
+
+func TestInjectTraefikLabels_V2_HttpsRedirect(t *testing.T) {
+	dir := t.TempDir()
+	input := "services:\n  app:\n    image: alpine\n"
+	path := writeCompose(t, dir, input)
+
+	env := &models.Environment{ID: "p--main", URL: "myapp.home", Kind: models.EnvKindProd}
+	err := InjectTraefikLabels(path, env, &models.ExposeSpec{Service: "app", Port: 80}, TraefikOptions{
+		ProxyNetwork:     "my-net",
+		Domains:          &iac.Domains{Prod: []string{"blocksweb.nl"}},
+		LetsencryptEmail: "ops@example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := readCompose(t, path)
+	// Redirect router on web entrypoint with same host rule.
+	mustContain(t, out, "traefik.http.routers.p--main-public-http.rule=Host(`blocksweb.nl`)")
+	mustContain(t, out, "traefik.http.routers.p--main-public-http.entrypoints=web")
+	mustContain(t, out, "traefik.http.routers.p--main-public-http.middlewares=https-redirect-p--main")
+	// Middleware definition.
+	mustContain(t, out, "traefik.http.middlewares.https-redirect-p--main.redirectscheme.scheme=https")
+}
+
+func TestInjectTraefikLabels_V2_NoRedirectWhenLeUnset(t *testing.T) {
+	dir := t.TempDir()
+	input := "services:\n  app:\n    image: alpine\n"
+	path := writeCompose(t, dir, input)
+
+	env := &models.Environment{ID: "p--main", URL: "myapp.home", Kind: models.EnvKindProd}
+	err := InjectTraefikLabels(path, env, &models.ExposeSpec{Service: "app", Port: 80}, TraefikOptions{
+		ProxyNetwork:     "my-net",
+		Domains:          &iac.Domains{Prod: []string{"blocksweb.nl"}},
+		LetsencryptEmail: "", // unset
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := readCompose(t, path)
+	// No redirect router or middleware when LE is not configured.
+	if strings.Contains(out, "p--main-public-http") {
+		t.Errorf("expected no redirect router when LE unset; got:\n%s", out)
+	}
+	if strings.Contains(out, "https-redirect-p--main") {
+		t.Errorf("expected no redirect middleware when LE unset; got:\n%s", out)
+	}
+}
+
+func TestInjectTraefikLabels_V2_PreviewPattern(t *testing.T) {
+	dir := t.TempDir()
+	input := "services:\n  app:\n    image: alpine\n"
+	path := writeCompose(t, dir, input)
+
+	env := &models.Environment{
+		ID:         "stripe--feature-x",
+		URL:        "feature-x.stripe-payments.home",
+		Kind:       models.EnvKindPreview,
+		BranchSlug: "feature-x",
+	}
+	domains := &iac.Domains{
+		Preview: iac.PreviewDomains{Pattern: "{branch}.stripe-payments.blocksweb.nl"},
+	}
+	err := InjectTraefikLabels(path, env, &models.ExposeSpec{Service: "app", Port: 80}, TraefikOptions{
+		ProxyNetwork:     "my-net",
+		Domains:          domains,
+		LetsencryptEmail: "ops@example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := readCompose(t, path)
+	// Resolved preview domain on public router.
+	mustContain(t, out, "traefik.http.routers.stripe--feature-x-public.rule=Host(`feature-x.stripe-payments.blocksweb.nl`)")
+	mustContain(t, out, "traefik.http.routers.stripe--feature-x-public.entrypoints=websecure")
+}
+
+func TestInjectTraefikLabels_V2_PreviewPatternEmptyOnlyHome(t *testing.T) {
+	dir := t.TempDir()
+	input := "services:\n  app:\n    image: alpine\n"
+	path := writeCompose(t, dir, input)
+
+	env := &models.Environment{
+		ID:         "p--feature-y",
+		URL:        "feature-y.myapp.home",
+		Kind:       models.EnvKindPreview,
+		BranchSlug: "feature-y",
+	}
+	domains := &iac.Domains{
+		Prod: []string{"shouldnt.be.used.com"}, // prod domains do NOT apply to preview envs
+	}
+	err := InjectTraefikLabels(path, env, &models.ExposeSpec{Service: "app", Port: 80}, TraefikOptions{
+		ProxyNetwork:     "my-net",
+		Domains:          domains,
+		LetsencryptEmail: "ops@example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := readCompose(t, path)
+	// Only home router; no public router because preview pattern is empty.
+	mustContain(t, out, "p--feature-y-home")
+	if strings.Contains(out, "p--feature-y-public") {
+		t.Errorf("preview env without preview pattern should not emit -public router; got:\n%s", out)
+	}
+	if strings.Contains(out, "shouldnt.be.used.com") {
+		t.Errorf("Domains.Prod should not apply to preview envs; got:\n%s", out)
+	}
+}
+
+func TestInjectTraefikLabels_V2_ProdEnvIgnoresPreviewPattern(t *testing.T) {
+	dir := t.TempDir()
+	input := "services:\n  app:\n    image: alpine\n"
+	path := writeCompose(t, dir, input)
+
+	env := &models.Environment{
+		ID:   "p--main",
+		URL:  "myapp.home",
+		Kind: models.EnvKindProd,
+	}
+	domains := &iac.Domains{
+		Prod:    []string{"myapp.com"},
+		Preview: iac.PreviewDomains{Pattern: "{branch}.myapp.com"}, // ignored for prod
+	}
+	err := InjectTraefikLabels(path, env, &models.ExposeSpec{Service: "app", Port: 80}, TraefikOptions{
+		ProxyNetwork:     "my-net",
+		Domains:          domains,
+		LetsencryptEmail: "ops@example.com",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := readCompose(t, path)
+	mustContain(t, out, "Host(`myapp.com`)")
+	if strings.Contains(out, "{branch}") {
+		t.Errorf("literal {branch} placeholder leaked into output:\n%s", out)
+	}
+	// Pattern resolution on prod with empty BranchSlug would produce ".myapp.com" —
+	// verify the preview pattern was NOT applied for prod env.
+	if strings.Contains(out, "Host(`.myapp.com`)") {
+		t.Errorf("preview pattern resolved for prod env; got:\n%s", out)
 	}
 }

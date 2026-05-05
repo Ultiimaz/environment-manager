@@ -114,6 +114,8 @@ func main() {
 		buildRunner.SetServiceProvisioners(nil, &rdRunnerAdapter{p: rdProvisioner})
 	}
 
+	buildRunner.SetLetsencryptEmail(cfg.LetsencryptEmail)
+
 	// Branch reconcile (fetch origin per project, spawn missing previews, tear down gone branches)
 	spawner := &reconcileSpawner{
 		store:              projectsStore,
