@@ -197,3 +197,80 @@ func (p *Provisioner) waitReady(ctx context.Context) error {
 		}
 	}
 }
+
+// EnsureEnvDatabase ensures a per-environment database + user + grant exist
+// inside the singleton paas-postgres. Idempotent: pre-existing entities are
+// detected via "already exists" stderr and treated as success.
+//
+// Generates and stores a 24-byte password under the credential store key
+// "env:<envID>:db_password" on first creation. Pre-existing passwords are
+// preserved across re-runs (we never rotate from inside this method).
+func (p *Provisioner) EnsureEnvDatabase(ctx context.Context, envID, projectName, branchSlug string) (*EnvDatabase, error) {
+	dbName := SlugDatabaseName(projectName, branchSlug)
+	pwKey := "db_password" // stored under projectID = envID by SaveProjectSecret
+	pwStoreKey := "env:" + envID + ":db_password"
+
+	// Resolve user password — reuse existing or generate.
+	password, err := p.creds.GetProjectSecret(envID, pwKey)
+	if err != nil {
+		generated, gerr := p.passwordGen()
+		if gerr != nil {
+			return nil, fmt.Errorf("generate db password: %w", gerr)
+		}
+		if serr := p.creds.SaveProjectSecret(envID, pwKey, generated); serr != nil {
+			return nil, fmt.Errorf("save db password: %w", serr)
+		}
+		password = generated
+	}
+
+	// CREATE DATABASE
+	if err := p.runPsqlIdempotent(ctx,
+		fmt.Sprintf(`CREATE DATABASE "%s";`, dbName),
+		"already exists",
+	); err != nil {
+		return nil, fmt.Errorf("create database %s: %w", dbName, err)
+	}
+
+	// CREATE USER (= ROLE)
+	if err := p.runPsqlIdempotent(ctx,
+		fmt.Sprintf(`CREATE USER "%s" WITH ENCRYPTED PASSWORD '%s';`, dbName, password),
+		"already exists",
+	); err != nil {
+		return nil, fmt.Errorf("create user %s: %w", dbName, err)
+	}
+
+	// GRANT ALL — idempotent natively
+	if err := p.runPsqlIdempotent(ctx,
+		fmt.Sprintf(`GRANT ALL ON DATABASE "%s" TO "%s";`, dbName, dbName),
+		"",
+	); err != nil {
+		return nil, fmt.Errorf("grant on %s: %w", dbName, err)
+	}
+
+	return &EnvDatabase{
+		DatabaseName: dbName,
+		Username:     dbName,
+		PasswordKey:  pwStoreKey,
+	}, nil
+}
+
+// runPsqlIdempotent runs `psql -U postgres -c "<sql>"` inside paas-postgres.
+// If the command fails with stderr containing benignFragment, the error is
+// swallowed (idempotency). Empty benignFragment = always treat non-zero as
+// real error. Returns nil on success or benign-failure.
+func (p *Provisioner) runPsqlIdempotent(ctx context.Context, sql, benignFragment string) error {
+	stdout, stderr, code, err := p.docker.ExecCommand(ctx, ContainerName,
+		[]string{"psql", "-U", "postgres", "-v", "ON_ERROR_STOP=1", "-c", sql},
+	)
+	if err != nil {
+		return fmt.Errorf("psql exec: %w (stdout=%q stderr=%q)", err, stdout, stderr)
+	}
+	if code == 0 {
+		return nil
+	}
+	if benignFragment != "" && strings.Contains(stderr, benignFragment) {
+		p.logger.Debug("psql idempotency hit", zap.String("sql", sql), zap.String("stderr", strings.TrimSpace(stderr)))
+		return nil
+	}
+	return fmt.Errorf("psql exit %d: stderr=%s", code, strings.TrimSpace(stderr))
+}

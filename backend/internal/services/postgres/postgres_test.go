@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 )
@@ -278,4 +279,126 @@ func TestEnsureService_ReadyTimeout(t *testing.T) {
 	if err == nil {
 		t.Fatal("expected timeout error")
 	}
+}
+
+func TestEnsureEnvDatabase_FreshCreate(t *testing.T) {
+	fd := &fakeDocker{
+		statuses: map[string]containerState{
+			ContainerName: {exists: true, running: true},
+		},
+		// pg_isready (during EnsureService warmup, if called) + 3 SQL execs all succeed
+		execResults: []execResult{{exitCode: 0}},
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	p := newTestProvisioner(t, fd, fc)
+
+	got, err := p.EnsureEnvDatabase(context.Background(), "envid-abc", "stripe-payments", "main")
+	if err != nil {
+		t.Fatalf("EnsureEnvDatabase: %v", err)
+	}
+
+	want := &EnvDatabase{
+		DatabaseName: "stripepayments_main",
+		Username:     "stripepayments_main",
+		PasswordKey:  "env:envid-abc:db_password",
+	}
+	if got.DatabaseName != want.DatabaseName || got.Username != want.Username || got.PasswordKey != want.PasswordKey {
+		t.Errorf("got %+v want %+v", got, want)
+	}
+
+	// Password was generated and stored under the env-id key.
+	stored, err := fc.GetProjectSecret("envid-abc", "db_password")
+	if err != nil {
+		t.Fatalf("password not stored: %v", err)
+	}
+	if stored == "" || len(stored) < 16 {
+		t.Errorf("stored password seems wrong: %q", stored)
+	}
+
+	// Three psql commands ran in order: CREATE DATABASE, CREATE USER, GRANT.
+	psqlCalls := filterPsqlCalls(fd.execCalls)
+	if len(psqlCalls) != 3 {
+		t.Fatalf("expected 3 psql calls, got %d: %+v", len(psqlCalls), psqlCalls)
+	}
+	if !contains(psqlCalls[0].cmd, "CREATE DATABASE \"stripepayments_main\"") {
+		t.Errorf("first call should CREATE DATABASE, got %v", psqlCalls[0].cmd)
+	}
+	if !contains(psqlCalls[1].cmd, "CREATE USER \"stripepayments_main\"") {
+		t.Errorf("second call should CREATE USER, got %v", psqlCalls[1].cmd)
+	}
+	if !contains(psqlCalls[2].cmd, "GRANT ALL ON DATABASE \"stripepayments_main\" TO \"stripepayments_main\"") {
+		t.Errorf("third call should GRANT, got %v", psqlCalls[2].cmd)
+	}
+}
+
+func TestEnsureEnvDatabase_IdempotentOnReRun(t *testing.T) {
+	// Second invocation: psql returns "already exists" errors which the
+	// provisioner must treat as success.
+	fd := &fakeDocker{
+		statuses: map[string]containerState{
+			ContainerName: {exists: true, running: true},
+		},
+		execResults: []execResult{
+			{exitCode: 1, stderr: "ERROR:  database \"stripepayments_main\" already exists"},
+			{exitCode: 1, stderr: "ERROR:  role \"stripepayments_main\" already exists"},
+			{exitCode: 0}, // GRANT is idempotent
+		},
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	_ = fc.SaveProjectSecret("envid-abc", "db_password", "existing-pw")
+	p := newTestProvisioner(t, fd, fc)
+
+	got, err := p.EnsureEnvDatabase(context.Background(), "envid-abc", "stripe-payments", "main")
+	if err != nil {
+		t.Fatalf("EnsureEnvDatabase should be idempotent: %v", err)
+	}
+	if got.DatabaseName != "stripepayments_main" {
+		t.Errorf("name wrong: %v", got)
+	}
+	// Existing password was NOT overwritten.
+	stored, _ := fc.GetProjectSecret("envid-abc", "db_password")
+	if stored != "existing-pw" {
+		t.Errorf("expected existing-pw preserved, got %q", stored)
+	}
+}
+
+func TestEnsureEnvDatabase_UnknownPsqlError(t *testing.T) {
+	// A non-"already exists" stderr should propagate as a real error.
+	fd := &fakeDocker{
+		statuses: map[string]containerState{
+			ContainerName: {exists: true, running: true},
+		},
+		execResults: []execResult{
+			{exitCode: 1, stderr: "FATAL:  the database is broken"},
+		},
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	p := newTestProvisioner(t, fd, fc)
+
+	_, err := p.EnsureEnvDatabase(context.Background(), "envid-abc", "x", "main")
+	if err == nil {
+		t.Fatal("expected error for unknown psql failure")
+	}
+}
+
+// helpers
+func filterPsqlCalls(calls []execCall) []execCall {
+	var out []execCall
+	for _, c := range calls {
+		if len(c.cmd) > 0 && c.cmd[0] == "psql" {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+func contains(cmd []string, fragment string) bool {
+	for _, s := range cmd {
+		if strings.Contains(s, fragment) {
+			return true
+		}
+	}
+	return false
 }
