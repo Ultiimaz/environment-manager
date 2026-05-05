@@ -112,7 +112,7 @@ func makeProjectFixture(t *testing.T) (*projects.Store, *builder.Runner, *models
 
 // newWebhookV2Handler builds a WebhookHandler wired for project push-to-deploy.
 func newWebhookV2Handler(store *projects.Store, runner *builder.Runner) *WebhookHandler {
-	h := NewWebhookHandler(nil, nil, zap.NewNop())
+	h := NewWebhookHandler(zap.NewNop())
 	h.SetProjectsStore(store)
 	h.SetRunner(runner)
 	return h
@@ -214,7 +214,7 @@ func TestWebhook_UnknownRepo_IsIgnored(t *testing.T) {
 // returns 200 and the legacy path runs unmodified.
 func TestWebhook_NoPushForNilStoreOrRunner_IsNoop(t *testing.T) {
 	// Handler with no projects wiring.
-	h := NewWebhookHandler(nil, nil, zap.NewNop())
+	h := NewWebhookHandler(zap.NewNop())
 	// No SetProjectsStore / SetRunner calls.
 
 	payload := models.WebhookPayload{
