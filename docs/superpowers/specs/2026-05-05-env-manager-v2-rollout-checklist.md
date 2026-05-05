@@ -14,7 +14,12 @@ After rollout:
 - [ ] No reference to deleted types in any kept Go file (`go vet ./...` clean)
 
 ## Plan 2 — IaC v2 parser
-*(populated when plan 2 is written)*
+
+After merge:
+- [ ] `cd backend && go test ./internal/iac/...` returns all PASS
+- [ ] `cd backend && go test ./...` still all PASS (no regression in other packages)
+- [ ] No new direct callers of `iac.Parse` outside the test file (this is a library plan; wiring is Plans 3-5)
+- [ ] `internal/projects/devconfig.go` still exists and is still the active config parser (will be removed when its last caller migrates)
 
 ## Plan 3 — Service plane (Postgres + Redis)
 *(populated when plan 3 is written)*
