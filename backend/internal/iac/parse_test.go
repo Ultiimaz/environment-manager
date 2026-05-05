@@ -533,3 +533,73 @@ hooks:
 		})
 	}
 }
+
+func TestParse_FullSpecExample(t *testing.T) {
+	// This is the canonical example from
+	// docs/superpowers/specs/2026-05-05-env-manager-v2-design.md
+	// section "IaC schema (.dev/config.yaml v2)".
+	// Keep this test green to guarantee the spec example always parses.
+	input := []byte(`project_name: stripe-payments
+
+expose:
+  service: app
+  port: 80
+
+domains:
+  prod:
+    - blocksweb.nl
+    - www.blocksweb.nl
+  preview:
+    pattern: "{branch}.stripe-payments.blocksweb.nl"
+
+services:
+  postgres: true
+  redis: true
+
+secrets:
+  - STRIPE_SECRET_KEY
+  - STRIPE_WEBHOOK_SECRET
+  - ANTHROPIC_API_KEY
+  - GOOGLE_CLIENT_ID
+  - GOOGLE_CLIENT_SECRET
+
+hooks:
+  pre_deploy:
+    - php artisan migrate --force
+    - php artisan config:cache
+  post_deploy:
+    - php artisan queue:restart
+`)
+	got, err := Parse(input)
+	if err != nil {
+		t.Fatalf("spec example failed to parse: %v", err)
+	}
+	want := &Config{
+		ProjectName: "stripe-payments",
+		Expose:      ExposeSpec{Service: "app", Port: 80},
+		Domains: Domains{
+			Prod:    []string{"blocksweb.nl", "www.blocksweb.nl"},
+			Preview: PreviewDomains{Pattern: "{branch}.stripe-payments.blocksweb.nl"},
+		},
+		Services: Services{Postgres: true, Redis: true},
+		Secrets: []string{
+			"STRIPE_SECRET_KEY",
+			"STRIPE_WEBHOOK_SECRET",
+			"ANTHROPIC_API_KEY",
+			"GOOGLE_CLIENT_ID",
+			"GOOGLE_CLIENT_SECRET",
+		},
+		Hooks: Hooks{
+			PreDeploy: []string{
+				"php artisan migrate --force",
+				"php artisan config:cache",
+			},
+			PostDeploy: []string{
+				"php artisan queue:restart",
+			},
+		},
+	}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("got %+v\nwant %+v", got, want)
+	}
+}
