@@ -86,3 +86,55 @@ func TestProjectSecret_Delete(t *testing.T) {
 		t.Errorf("expected ErrNotFound, got %v", err)
 	}
 }
+
+func TestSystemSecret_RoundTrip(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.SaveSystemSecret("system:paas-postgres:superuser", "hunter2"); err != nil {
+		t.Fatal(err)
+	}
+	got, err := s.GetSystemSecret("system:paas-postgres:superuser")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != "hunter2" {
+		t.Errorf("got %q, want hunter2", got)
+	}
+}
+
+func TestSystemSecret_NotFound(t *testing.T) {
+	s := newTestStore(t)
+	_, err := s.GetSystemSecret("system:nope")
+	if !errors.Is(err, ErrNotFound) {
+		t.Fatalf("expected ErrNotFound, got %v", err)
+	}
+}
+
+func TestSystemSecret_OverwriteSameKey(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.SaveSystemSecret("system:paas-redis:superuser", "first"); err != nil {
+		t.Fatal(err)
+	}
+	if err := s.SaveSystemSecret("system:paas-redis:superuser", "second"); err != nil {
+		t.Fatal(err)
+	}
+	got, _ := s.GetSystemSecret("system:paas-redis:superuser")
+	if got != "second" {
+		t.Errorf("got %q, want second", got)
+	}
+}
+
+func TestSystemSecret_RequiresKey(t *testing.T) {
+	s := newTestStore(t)
+	if err := s.SaveSystemSecret("system:paas-postgres:superuser", "v"); err != nil {
+		t.Fatal(err)
+	}
+	// Distinct keys are independent.
+	if err := s.SaveSystemSecret("system:paas-redis:superuser", "v2"); err != nil {
+		t.Fatal(err)
+	}
+	v1, _ := s.GetSystemSecret("system:paas-postgres:superuser")
+	v2, _ := s.GetSystemSecret("system:paas-redis:superuser")
+	if v1 != "v" || v2 != "v2" {
+		t.Errorf("isolated keys broken: v1=%q v2=%q", v1, v2)
+	}
+}
