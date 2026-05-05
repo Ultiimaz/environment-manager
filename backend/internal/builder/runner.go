@@ -283,6 +283,37 @@ func (r *Runner) Teardown(ctx context.Context, env *models.Environment) error {
 	envDir := filepath.Join(r.dataDir, "envs", env.ID)
 	composePath := filepath.Join(envDir, "docker-compose.yaml")
 
+	// --- Plan 3b: drop services + clean cred-store entries -----------------
+	// Best-effort. Failures are logged but don't abort directory cleanup.
+	project, err := r.store.GetProject(env.ProjectID)
+	if err == nil {
+		iacPath := filepath.Join(project.LocalPath, ".dev", "config.yaml")
+		if iacBytes, ferr := os.ReadFile(iacPath); ferr == nil {
+			if cfg, perr := iac.Parse(iacBytes); perr == nil {
+				if cfg.Services.Postgres && r.postgres != nil {
+					if derr := r.postgres.DropEnvDatabase(ctx, project.Name, env.BranchSlug); derr != nil {
+						r.logger.Warn("DropEnvDatabase failed",
+							zap.String("env_id", env.ID), zap.Error(derr))
+					}
+				}
+				if cfg.Services.Redis && r.redis != nil {
+					if derr := r.redis.DropEnvACL(ctx, project.Name, env.BranchSlug); derr != nil {
+						r.logger.Warn("DropEnvACL failed",
+							zap.String("env_id", env.ID), zap.Error(derr))
+					}
+				}
+			}
+		}
+	}
+	// Remove per-env cred-store password entries unconditionally — safe even
+	// when the keys never existed (DeleteProjectSecret returns ErrNotFound,
+	// which we ignore).
+	if r.credStore != nil {
+		_ = r.credStore.DeleteProjectSecret(env.ID, "db_password")
+		_ = r.credStore.DeleteProjectSecret(env.ID, "redis_password")
+	}
+	// ----------------------------------------------------------------------
+
 	// If the rendered compose exists, run docker compose down -v to remove
 	// containers + named volumes. If it doesn't exist (env never built),
 	// skip the docker call.

@@ -516,3 +516,113 @@ services:
 		t.Errorf("env status = %v, want running", gotEnv.Status)
 	}
 }
+
+func TestRunner_Teardown_DropsServices(t *testing.T) {
+	r, store, project, env, dataDir, exec := newRunnerTest(t)
+	_ = r
+
+	devCfg := `project_name: myapp
+expose:
+  service: app
+  port: 80
+services:
+  postgres: true
+  redis: true
+`
+	if err := os.WriteFile(filepath.Join(project.LocalPath, ".dev", "config.yaml"), []byte(devCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	// Pre-create an envDir so the existing teardown logic finds something to remove.
+	envDir := filepath.Join(dataDir, "envs", env.ID)
+	if err := os.MkdirAll(envDir, 0755); err != nil {
+		t.Fatal(err)
+	}
+	_ = os.WriteFile(filepath.Join(envDir, "docker-compose.yaml"), []byte("services: {}\n"), 0644)
+
+	credKey := make([]byte, 32)
+	for i := range credKey {
+		credKey[i] = byte(i + 9)
+	}
+	credStore, err := credentials.NewStore(filepath.Join(dataDir, "creds.json"), credKey)
+	if err != nil {
+		t.Fatal(err)
+	}
+	_ = credStore.SaveProjectSecret(env.ID, "db_password", "the-db-pw")
+	_ = credStore.SaveProjectSecret(env.ID, "redis_password", "the-redis-pw")
+
+	pg := &fakePostgres{}
+	rd := &fakeRedis{}
+	r2 := NewRunner(store, exec, dataDir, "", NewQueue(), zap.NewNop(), credStore)
+	r2.SetServiceProvisioners(pg, rd)
+
+	if err := r2.Teardown(context.Background(), env); err != nil {
+		t.Fatalf("Teardown: %v", err)
+	}
+	want := project.Name + "/" + env.BranchSlug
+	if len(pg.dropCalls) != 1 || pg.dropCalls[0] != want {
+		t.Errorf("postgres DropEnvDatabase calls = %v, want [%s]", pg.dropCalls, want)
+	}
+	if len(rd.dropCalls) != 1 || rd.dropCalls[0] != want {
+		t.Errorf("redis DropEnvACL calls = %v, want [%s]", rd.dropCalls, want)
+	}
+	// Cred-store entries should be gone.
+	if _, err := credStore.GetProjectSecret(env.ID, "db_password"); err == nil {
+		t.Errorf("expected db_password removed from cred-store")
+	}
+	if _, err := credStore.GetProjectSecret(env.ID, "redis_password"); err == nil {
+		t.Errorf("expected redis_password removed from cred-store")
+	}
+}
+
+func TestRunner_Teardown_NoServicesDeclared_NoDrop(t *testing.T) {
+	r, store, project, env, dataDir, exec := newRunnerTest(t)
+	_ = r
+
+	devCfg := `project_name: myapp
+expose:
+  service: app
+  port: 80
+`
+	if err := os.WriteFile(filepath.Join(project.LocalPath, ".dev", "config.yaml"), []byte(devCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	envDir := filepath.Join(dataDir, "envs", env.ID)
+	_ = os.MkdirAll(envDir, 0755)
+	_ = os.WriteFile(filepath.Join(envDir, "docker-compose.yaml"), []byte("services: {}\n"), 0644)
+
+	pg := &fakePostgres{}
+	rd := &fakeRedis{}
+	r2 := NewRunner(store, exec, dataDir, "", NewQueue(), zap.NewNop(), nil)
+	r2.SetServiceProvisioners(pg, rd)
+
+	if err := r2.Teardown(context.Background(), env); err != nil {
+		t.Fatal(err)
+	}
+	if len(pg.dropCalls) != 0 || len(rd.dropCalls) != 0 {
+		t.Errorf("expected zero drop calls, got pg=%v rd=%v", pg.dropCalls, rd.dropCalls)
+	}
+}
+
+func TestRunner_Teardown_IacAbsent_NoDrop(t *testing.T) {
+	r, store, _, env, dataDir, exec := newRunnerTest(t)
+	_ = r
+	// No .dev/config.yaml.
+
+	envDir := filepath.Join(dataDir, "envs", env.ID)
+	_ = os.MkdirAll(envDir, 0755)
+	_ = os.WriteFile(filepath.Join(envDir, "docker-compose.yaml"), []byte("services: {}\n"), 0644)
+
+	pg := &fakePostgres{}
+	rd := &fakeRedis{}
+	r2 := NewRunner(store, exec, dataDir, "", NewQueue(), zap.NewNop(), nil)
+	r2.SetServiceProvisioners(pg, rd)
+
+	if err := r2.Teardown(context.Background(), env); err != nil {
+		t.Fatal(err)
+	}
+	if len(pg.dropCalls) != 0 || len(rd.dropCalls) != 0 {
+		t.Errorf("expected zero drop calls when iac absent, got pg=%v rd=%v", pg.dropCalls, rd.dropCalls)
+	}
+}
