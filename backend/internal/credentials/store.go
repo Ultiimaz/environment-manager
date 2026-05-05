@@ -31,6 +31,7 @@ type Store struct {
 type credentials struct {
 	Tokens         map[string]string            `json:"tokens"`                    // URL -> encrypted token
 	ProjectSecrets map[string]map[string]string `json:"project_secrets,omitempty"` // project_id -> { key -> encrypted_value }
+	SystemSecrets  map[string]string            `json:"system_secrets,omitempty"`  // arbitrary system-level keyed secrets (e.g. paas-postgres superuser pw)
 }
 
 // NewStore creates a new credential store
@@ -290,6 +291,65 @@ func (s *Store) DeleteProjectSecret(projectID, key string) error {
 	}
 	delete(creds.ProjectSecrets[projectID], key)
 	return s.save(creds)
+}
+
+// SaveSystemSecret encrypts and stores a process-level secret keyed by an
+// arbitrary identifier (e.g. "system:paas-postgres:superuser"). Used for the
+// service-plane's singleton container superuser passwords.
+func (s *Store) SaveSystemSecret(key, value string) error {
+	if s.key == nil {
+		return ErrNoKey
+	}
+	if key == "" {
+		return errors.New("key required")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	creds, err := s.load()
+	if err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if creds == nil {
+		creds = &credentials{}
+	}
+	if creds.Tokens == nil {
+		creds.Tokens = make(map[string]string)
+	}
+	if creds.SystemSecrets == nil {
+		creds.SystemSecrets = make(map[string]string)
+	}
+	encrypted, err := s.encrypt(value)
+	if err != nil {
+		return err
+	}
+	creds.SystemSecrets[key] = encrypted
+	return s.save(creds)
+}
+
+// GetSystemSecret returns the decrypted value for a system secret.
+// Returns ErrNotFound when the key is unset.
+func (s *Store) GetSystemSecret(key string) (string, error) {
+	if s.key == nil {
+		return "", ErrNoKey
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	creds, err := s.load()
+	if err != nil {
+		if os.IsNotExist(err) {
+			return "", ErrNotFound
+		}
+		return "", err
+	}
+	if creds == nil || creds.SystemSecrets == nil {
+		return "", ErrNotFound
+	}
+	enc, ok := creds.SystemSecrets[key]
+	if !ok {
+		return "", ErrNotFound
+	}
+	return s.decrypt(enc)
 }
 
 // load reads credentials from disk
