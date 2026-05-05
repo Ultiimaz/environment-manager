@@ -515,6 +515,19 @@ services:
 	if gotEnv.Status != models.EnvStatusRunning {
 		t.Errorf("env status = %v, want running", gotEnv.Status)
 	}
+	// Log file should record a WARNING for each unwired provisioner so an
+	// operator who forgot to wire them gets a clear signal.
+	logBytes, err := os.ReadFile(filepath.Join(dataDir, "builds", env.ID, "latest.log"))
+	if err != nil {
+		t.Fatalf("read log: %v", err)
+	}
+	logContent := string(logBytes)
+	if !strings.Contains(logContent, "WARNING: services.postgres declared but provisioner not wired") {
+		t.Errorf("expected postgres-not-wired warning in log; got:\n%s", logContent)
+	}
+	if !strings.Contains(logContent, "WARNING: services.redis declared but provisioner not wired") {
+		t.Errorf("expected redis-not-wired warning in log; got:\n%s", logContent)
+	}
 }
 
 func TestRunner_Teardown_DropsServices(t *testing.T) {
