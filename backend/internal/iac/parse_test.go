@@ -162,3 +162,61 @@ func TestParse_ExposePortBoundaries(t *testing.T) {
 		}
 	}
 }
+
+func TestParse_DomainsProdHappyPath(t *testing.T) {
+	input := []byte(`project_name: app
+expose:
+  service: app
+  port: 80
+domains:
+  prod:
+    - blocksweb.nl
+    - www.blocksweb.nl
+    - api.example.co.uk
+`)
+	got, err := Parse(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"blocksweb.nl", "www.blocksweb.nl", "api.example.co.uk"}
+	if !reflect.DeepEqual(got.Domains.Prod, want) {
+		t.Fatalf("got %v want %v", got.Domains.Prod, want)
+	}
+}
+
+func TestParse_DomainsProdRejectsInvalid(t *testing.T) {
+	cases := []struct {
+		name  string
+		entry string
+	}{
+		{"empty", ""},
+		{"whitespace", "   "},
+		{"contains space", "bad domain.com"},
+		{"trailing dot", "blocksweb.nl."},
+		{"leading dot", ".blocksweb.nl"},
+		{"underscore", "bad_label.com"},
+		{"label too long", strings.Repeat("a", 64) + ".com"},
+		{"bare TLD only", "localhost"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := "project_name: app\nexpose:\n  service: app\n  port: 80\ndomains:\n  prod:\n    - " + yamlQuote(tc.entry) + "\n"
+			_, err := Parse([]byte(input))
+			if err == nil {
+				t.Fatalf("expected invalid-hostname error for %q", tc.entry)
+			}
+			if !errors.Is(err, ErrInvalidConfig) {
+				t.Fatalf("expected ErrInvalidConfig, got %v", err)
+			}
+			if !strings.Contains(err.Error(), "domains.prod") {
+				t.Fatalf("expected error to mention domains.prod, got %q", err.Error())
+			}
+		})
+	}
+}
+
+// yamlQuote wraps a value in double quotes so YAML treats it as a string
+// regardless of whitespace or special characters.
+func yamlQuote(s string) string {
+	return "\"" + strings.ReplaceAll(s, "\"", "\\\"") + "\""
+}

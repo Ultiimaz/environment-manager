@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 
 	"gopkg.in/yaml.v3"
@@ -13,6 +14,13 @@ import (
 // Callers can use errors.Is(err, ErrInvalidConfig) to detect
 // schema-validation failures (versus, e.g., I/O errors).
 var ErrInvalidConfig = errors.New("invalid .dev/config.yaml")
+
+// hostnameRE matches a DNS hostname: at least two dot-separated labels,
+// each 1-63 chars of [a-zA-Z0-9-], not starting/ending with hyphen.
+// Total length is not enforced (255-char DNS limit) — practically irrelevant.
+var hostnameRE = regexp.MustCompile(
+	`^([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)(\.[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?)+$`,
+)
 
 // Parse decodes data as the v2 .dev/config.yaml schema and validates
 // every field. Unknown keys at any level cause an error (strict mode).
@@ -47,5 +55,16 @@ func validate(c *Config) error {
 	if c.Expose.Port < 1 || c.Expose.Port > 65535 {
 		return fmt.Errorf("%w: expose.port must be between 1 and 65535", ErrInvalidConfig)
 	}
+	for i, d := range c.Domains.Prod {
+		if !validHostname(d) {
+			return fmt.Errorf("%w: domains.prod[%d] %q is not a valid hostname", ErrInvalidConfig, i, d)
+		}
+	}
 	return nil
+}
+
+// validHostname reports whether s is a syntactically valid DNS FQDN
+// per the package's hostname regex.
+func validHostname(s string) bool {
+	return hostnameRE.MatchString(s)
 }
