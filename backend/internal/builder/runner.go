@@ -291,7 +291,23 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 		return r.fail(env, b, err.Error())
 	}
 
-	// (Plan 4 inserts post_deploy hooks here.)
+	// --- Plan 4: post_deploy hooks ------------------------------------------
+	if iacCfg != nil && len(iacCfg.Hooks.PostDeploy) > 0 {
+		if iacCfg.Expose.Service == "" {
+			_, _ = log.Write([]byte("WARNING: hooks.post_deploy declared but expose.service is empty; skipping\n"))
+		} else {
+			hookExec := &hooks.Executor{
+				Compose:    r.exec,
+				Log:        log,
+				EnvID:      env.ID,
+				Workdir:    envDir,
+				ProjectDir: project.LocalPath,
+				Service:    iacCfg.Expose.Service,
+			}
+			hookExec.RunPost(ctx, iacCfg.Hooks.PostDeploy)
+		}
+	}
+	// ------------------------------------------------------------------------
 
 	now := time.Now().UTC()
 	b.FinishedAt = &now

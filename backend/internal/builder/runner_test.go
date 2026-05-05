@@ -770,3 +770,105 @@ hooks:
 		t.Errorf("build status = %v, want failed", gotBuild.Status)
 	}
 }
+
+func TestRunner_Build_PostDeployHooksRunAfterUp(t *testing.T) {
+	r, store, project, env, dataDir, exec := newRunnerTest(t)
+	_ = r
+
+	devCfg := `project_name: myapp
+expose:
+  service: app
+  port: 80
+hooks:
+  post_deploy:
+    - "echo queue-restart"
+`
+	if err := os.WriteFile(filepath.Join(project.LocalPath, ".dev", "config.yaml"), []byte(devCfg), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	r2 := NewRunner(store, exec, dataDir, "", NewQueue(), zap.NewNop(), nil)
+
+	build := &models.Build{
+		ID: "b1", EnvID: env.ID, SHA: "abc",
+		TriggeredBy: models.BuildTriggerManual,
+		Status:      models.BuildStatusRunning,
+	}
+	_ = store.SaveBuild("p1", build)
+
+	if err := r2.Build(context.Background(), env, build); err != nil {
+		t.Fatalf("Build: %v", err)
+	}
+	// 3 compose calls: build, up, post-hook.
+	if exec.calls != 3 {
+		t.Errorf("exec.calls = %d, want 3 (build + up + 1 post-hook)", exec.calls)
+	}
+}
+
+func TestRunner_Build_PostDeployFailureDoesNotAbort(t *testing.T) {
+	dataDir := t.TempDir()
+	store, err := projects.NewStore(dataDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	repoDir := filepath.Join(dataDir, "repos", "myapp")
+	devDir := filepath.Join(repoDir, ".dev")
+	if err := writeFiles(devDir, map[string]string{
+		"docker-compose.prod.yml": "services:\n  app:\n    image: hello-world\n",
+		"config.yaml": `project_name: myapp
+expose:
+  service: app
+  port: 80
+hooks:
+  post_deploy:
+    - "always-fails"
+    - "second-also"
+`,
+	}); err != nil {
+		t.Fatal(err)
+	}
+	project := &models.Project{
+		ID: "p1", Name: "myapp", LocalPath: repoDir, DefaultBranch: "main",
+		Status: models.ProjectStatusActive,
+	}
+	_ = store.SaveProject(project)
+	env := &models.Environment{
+		ID: "p1--main", ProjectID: "p1",
+		Branch: "main", BranchSlug: "main", Kind: models.EnvKindProd,
+		ComposeFile: ".dev/docker-compose.prod.yml",
+		Status:      models.EnvStatusPending,
+		URL:         "myapp.home",
+	}
+	_ = store.SaveEnvironment(env)
+
+	// build OK, up OK, hook 1 fails, hook 2 fails — but build should still succeed.
+	exec := &fakeOrderedExecutor{
+		exitErrs: []error{nil, nil, errors.New("queue restart failed"), errors.New("cache-clear failed")},
+	}
+	r := NewRunner(store, exec, dataDir, "", NewQueue(), zap.NewNop(), nil)
+
+	build := &models.Build{
+		ID: "b1", EnvID: env.ID, SHA: "abc",
+		TriggeredBy: models.BuildTriggerManual,
+		Status:      models.BuildStatusRunning,
+	}
+	_ = store.SaveBuild("p1", build)
+
+	if err := r.Build(context.Background(), env, build); err != nil {
+		t.Fatalf("Build should succeed despite post-hook failures, got %v", err)
+	}
+
+	// Expect 4 calls: build + up + 2 hooks (both ran despite first's failure).
+	if len(exec.argsList) != 4 {
+		t.Fatalf("expected 4 calls, got %d: %v", len(exec.argsList), exec.argsList)
+	}
+
+	gotBuild, _ := store.GetBuild("p1", build.ID)
+	if gotBuild.Status != models.BuildStatusSuccess {
+		t.Errorf("build status = %v, want success", gotBuild.Status)
+	}
+	gotEnv, _ := store.GetEnvironment(env.ProjectID, env.BranchSlug)
+	if gotEnv.Status != models.EnvStatusRunning {
+		t.Errorf("env status = %v, want running", gotEnv.Status)
+	}
+}
