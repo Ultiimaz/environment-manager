@@ -38,5 +38,14 @@ func validate(c *Config) error {
 	if strings.TrimSpace(c.ProjectName) == "" {
 		return fmt.Errorf("%w: project_name required", ErrInvalidConfig)
 	}
+	if c.Expose == (ExposeSpec{}) {
+		return fmt.Errorf("%w: expose required", ErrInvalidConfig)
+	}
+	if strings.TrimSpace(c.Expose.Service) == "" {
+		return fmt.Errorf("%w: expose.service must be non-empty", ErrInvalidConfig)
+	}
+	if c.Expose.Port < 1 || c.Expose.Port > 65535 {
+		return fmt.Errorf("%w: expose.port must be between 1 and 65535", ErrInvalidConfig)
+	}
 	return nil
 }

@@ -88,3 +88,77 @@ expose:
 		})
 	}
 }
+
+func TestParse_ExposeRequired(t *testing.T) {
+	input := []byte("project_name: app\n")
+	_, err := Parse(input)
+	if err == nil {
+		t.Fatalf("expected expose-required error, got nil")
+	}
+	if !errors.Is(err, ErrInvalidConfig) {
+		t.Fatalf("got %v", err)
+	}
+	if !strings.Contains(err.Error(), "expose") {
+		t.Fatalf("expected expose in error, got %q", err.Error())
+	}
+}
+
+func TestParse_ExposeValidation(t *testing.T) {
+	cases := []struct {
+		name    string
+		input   string
+		wantErr string
+	}{
+		{
+			"missing service",
+			"project_name: app\nexpose:\n  port: 80\n",
+			"expose.service",
+		},
+		{
+			"empty service",
+			"project_name: app\nexpose:\n  service: \"\"\n  port: 80\n",
+			"expose.service",
+		},
+		{
+			"port zero",
+			"project_name: app\nexpose:\n  service: app\n  port: 0\n",
+			"expose.port",
+		},
+		{
+			"port negative",
+			"project_name: app\nexpose:\n  service: app\n  port: -1\n",
+			"expose.port",
+		},
+		{
+			"port too high",
+			"project_name: app\nexpose:\n  service: app\n  port: 65536\n",
+			"expose.port",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Parse([]byte(tc.input))
+			if err == nil {
+				t.Fatalf("expected error containing %q, got nil", tc.wantErr)
+			}
+			if !errors.Is(err, ErrInvalidConfig) {
+				t.Fatalf("expected ErrInvalidConfig, got %v", err)
+			}
+			if !strings.Contains(err.Error(), tc.wantErr) {
+				t.Fatalf("expected error containing %q, got %q", tc.wantErr, err.Error())
+			}
+		})
+	}
+}
+
+func TestParse_ExposePortBoundaries(t *testing.T) {
+	cases := []string{
+		"project_name: app\nexpose:\n  service: app\n  port: 1\n",
+		"project_name: app\nexpose:\n  service: app\n  port: 65535\n",
+	}
+	for _, input := range cases {
+		if _, err := Parse([]byte(input)); err != nil {
+			t.Fatalf("expected boundary input to parse, got %v", err)
+		}
+	}
+}
