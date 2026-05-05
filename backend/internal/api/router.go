@@ -77,12 +77,14 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Group(func(r chi.Router) {
 				r.Use(handlers.BearerAuth(cfg.CredentialStore))
 				r.Post("/projects", projectsHandler.Create)
+				r.Get("/projects/{id}/secrets/{key}", projectsHandler.GetSecret)
 				r.Put("/projects/{id}/secrets", projectsHandler.SetSecrets)
 				r.Delete("/projects/{id}/secrets/{key}", projectsHandler.DeleteSecret)
 				r.Post("/envs/{id}/build", buildsHandler.Trigger)
 			})
 		} else {
 			r.Post("/projects", projectsHandler.Create)
+			r.Get("/projects/{id}/secrets/{key}", projectsHandler.GetSecret)
 			r.Put("/projects/{id}/secrets", projectsHandler.SetSecrets)
 			r.Delete("/projects/{id}/secrets/{key}", projectsHandler.DeleteSecret)
 			r.Post("/envs/{id}/build", buildsHandler.Trigger)
