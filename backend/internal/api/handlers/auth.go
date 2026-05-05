@@ -14,8 +14,9 @@ type AdminTokenStore interface {
 
 // BearerAuth returns a chi-compatible middleware that gates handlers behind
 // the Authorization: Bearer <token> header. The expected token is read from
-// the credential store on every request — cheap because Store.GetSystemSecret
-// is a sync.RWMutex-protected map lookup with at most one disk read.
+// the credential store on every request — one disk read + AES-GCM decrypt per
+// request. Acceptable at home-lab scale; if traffic grows, cache the decrypted
+// token in this closure with an invalidate-on-write hook.
 //
 // Behaviour:
 //   - Missing/malformed header → 401 Unauthorized

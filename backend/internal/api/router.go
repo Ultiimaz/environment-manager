@@ -73,22 +73,18 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		// Mutating endpoints — require admin token. Bearer middleware skipped
 		// when credStore is nil (early-boot / no-key dev mode); in that mode
 		// the token is unset and the previous behaviour (open) is preserved.
-		if cfg.CredentialStore != nil {
-			r.Group(func(r chi.Router) {
+		// New routes go inside this single Group so adding them in 6b doesn't
+		// require touching two arms.
+		r.Group(func(r chi.Router) {
+			if cfg.CredentialStore != nil {
 				r.Use(handlers.BearerAuth(cfg.CredentialStore))
-				r.Post("/projects", projectsHandler.Create)
-				r.Get("/projects/{id}/secrets/{key}", projectsHandler.GetSecret)
-				r.Put("/projects/{id}/secrets", projectsHandler.SetSecrets)
-				r.Delete("/projects/{id}/secrets/{key}", projectsHandler.DeleteSecret)
-				r.Post("/envs/{id}/build", buildsHandler.Trigger)
-			})
-		} else {
+			}
 			r.Post("/projects", projectsHandler.Create)
 			r.Get("/projects/{id}/secrets/{key}", projectsHandler.GetSecret)
 			r.Put("/projects/{id}/secrets", projectsHandler.SetSecrets)
 			r.Delete("/projects/{id}/secrets/{key}", projectsHandler.DeleteSecret)
 			r.Post("/envs/{id}/build", buildsHandler.Trigger)
-		}
+		})
 	})
 
 	// WebSocket routes
