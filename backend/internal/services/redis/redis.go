@@ -239,3 +239,27 @@ func (p *Provisioner) EnsureEnvACL(ctx context.Context, envID, projectName, bran
 		PasswordKey: pwStoreKey,
 	}, nil
 }
+
+// DropEnvACL removes a per-environment ACL user. Idempotent — ACL DELUSER
+// returns 0 (rather than erroring) when the user is absent. Cred-store
+// password entry is left untouched; caller's own teardown handles that.
+//
+// Note: keys with the user's prefix are NOT auto-deleted. Per the design
+// spec, this is acceptable for v2 (ACL gone = no access; orphan keys leak
+// but cause no harm).
+func (p *Provisioner) DropEnvACL(ctx context.Context, projectName, branchSlug string) error {
+	user := SlugUserName(projectName, branchSlug)
+	superPw, err := p.creds.GetSystemSecret(SuperuserKey)
+	if err != nil {
+		return fmt.Errorf("redis superuser password missing: %w", err)
+	}
+	cmd := []string{"redis-cli", "-a", superPw, "ACL", "DELUSER", user}
+	stdout, stderr, code, err := p.docker.ExecCommand(ctx, ContainerName, cmd)
+	if err != nil {
+		return fmt.Errorf("ACL DELUSER %s: %w (stdout=%q stderr=%q)", user, err, stdout, stderr)
+	}
+	if code != 0 {
+		return fmt.Errorf("ACL DELUSER %s exit %d: %s", user, code, strings.TrimSpace(stderr))
+	}
+	return nil
+}

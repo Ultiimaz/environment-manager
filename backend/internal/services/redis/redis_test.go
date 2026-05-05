@@ -324,3 +324,39 @@ func TestEnsureEnvACL_RedisFailureBubbles(t *testing.T) {
 		t.Fatal("expected redis-cli failure to surface")
 	}
 }
+
+func TestDropEnvACL_RemovesUser(t *testing.T) {
+	fd := &fakeDocker{
+		statuses:    map[string]containerState{ContainerName: {exists: true, running: true}},
+		execResults: []execResult{{stdout: "1", exitCode: 0}}, // DELUSER returns count
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	p := newTestProvisioner(t, fd, fc)
+
+	if err := p.DropEnvACL(context.Background(), "stripe-payments", "main"); err != nil {
+		t.Fatalf("DropEnvACL: %v", err)
+	}
+	cliCalls := filterRedisCliCalls(fd.execCalls)
+	if len(cliCalls) != 1 {
+		t.Fatalf("expected 1 redis-cli call, got %d", len(cliCalls))
+	}
+	cmd := cliCalls[0].cmd
+	if !contains(cmd, "DELUSER") || !contains(cmd, "stripepayments_main") {
+		t.Errorf("expected ACL DELUSER stripepayments_main, got %v", cmd)
+	}
+}
+
+func TestDropEnvACL_AbsentUserIsNoop(t *testing.T) {
+	// DELUSER returns "0" in stdout when the user didn't exist; treat as success.
+	fd := &fakeDocker{
+		statuses:    map[string]containerState{ContainerName: {exists: true, running: true}},
+		execResults: []execResult{{stdout: "0", exitCode: 0}},
+	}
+	fc := newFakeCreds()
+	_ = fc.SaveSystemSecret(SuperuserKey, "super-pw")
+	p := newTestProvisioner(t, fd, fc)
+	if err := p.DropEnvACL(context.Background(), "stripe-payments", "no-such-branch"); err != nil {
+		t.Errorf("expected nil for absent ACL, got %v", err)
+	}
+}
