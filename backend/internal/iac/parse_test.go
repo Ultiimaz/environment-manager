@@ -379,3 +379,60 @@ services:
 		})
 	}
 }
+
+func TestParse_SecretsHappyPath(t *testing.T) {
+	input := []byte(`project_name: app
+expose:
+  service: app
+  port: 80
+secrets:
+  - STRIPE_SECRET_KEY
+  - ANTHROPIC_API_KEY
+  - DATABASE_URL_OVERRIDE
+`)
+	got, err := Parse(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := []string{"STRIPE_SECRET_KEY", "ANTHROPIC_API_KEY", "DATABASE_URL_OVERRIDE"}
+	if !reflect.DeepEqual(got.Secrets, want) {
+		t.Fatalf("got %v want %v", got.Secrets, want)
+	}
+}
+
+func TestParse_SecretsRejectsEmpty(t *testing.T) {
+	input := []byte(`project_name: app
+expose:
+  service: app
+  port: 80
+secrets:
+  - VALID_KEY
+  - ""
+`)
+	_, err := Parse(input)
+	if err == nil {
+		t.Fatalf("expected empty-secret error, got nil")
+	}
+	if !strings.Contains(err.Error(), "secrets") {
+		t.Fatalf("expected error to mention secrets, got %q", err.Error())
+	}
+}
+
+func TestParse_SecretsRejectsDuplicate(t *testing.T) {
+	input := []byte(`project_name: app
+expose:
+  service: app
+  port: 80
+secrets:
+  - STRIPE_KEY
+  - ANTHROPIC_KEY
+  - STRIPE_KEY
+`)
+	_, err := Parse(input)
+	if err == nil {
+		t.Fatalf("expected duplicate-secret error, got nil")
+	}
+	if !strings.Contains(err.Error(), "duplicate") {
+		t.Fatalf("expected error to mention duplicate, got %q", err.Error())
+	}
+}

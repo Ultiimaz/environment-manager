@@ -70,6 +70,16 @@ func validate(c *Config) error {
 			return fmt.Errorf("%w: domains.preview.pattern %q is not a valid hostname", ErrInvalidConfig, c.Domains.Preview.Pattern)
 		}
 	}
+	seenSecrets := make(map[string]bool, len(c.Secrets))
+	for i, s := range c.Secrets {
+		if strings.TrimSpace(s) == "" {
+			return fmt.Errorf("%w: secrets[%d] must be non-empty", ErrInvalidConfig, i)
+		}
+		if seenSecrets[s] {
+			return fmt.Errorf("%w: secrets duplicate key %q", ErrInvalidConfig, s)
+		}
+		seenSecrets[s] = true
+	}
 	return nil
 }
 
