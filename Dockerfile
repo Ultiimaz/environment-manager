@@ -14,7 +14,9 @@ RUN apk add --no-cache git
 COPY backend/go.mod ./
 RUN go mod download || true
 COPY backend/ ./
-RUN go mod tidy && CGO_ENABLED=0 GOOS=linux go build -o /server ./cmd/server
+RUN go mod tidy && \
+    CGO_ENABLED=0 GOOS=linux go build -o /server ./cmd/server && \
+    CGO_ENABLED=0 GOOS=linux go build -o /envm ./cmd/envm
 
 # Final image. Alpine 3.21 ships docker-cli 27.x which speaks Docker API
 # 1.47+; 3.19's docker-cli 24.x reports API 1.43 and is rejected by the
@@ -33,6 +35,7 @@ WORKDIR /app
 
 # Copy built artifacts
 COPY --from=backend-builder /server /app/server
+COPY --from=backend-builder /envm /usr/local/bin/envm
 COPY --from=frontend-builder /app/frontend/dist /app/static
 
 # Create data directory
