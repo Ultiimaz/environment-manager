@@ -36,7 +36,18 @@ After merge + redeploy:
 - [ ] No regression: stripe-payments builds still trigger via webhook; existing envs still serve
 
 ## Plan 3b — Per-env DB/ACL provisioning + URL injection
-*(populated when plan 3b is written)*
+
+After merge + redeploy:
+- [ ] Existing stripe-payments builds (still on v1 schema) trigger normally; runner logs `==> no .dev/config.yaml — skipping service provisioning` (or similar) — confirms graceful fallback
+- [ ] `cd backend && go test ./internal/builder/... -v` passes locally with the four new TestRunner_Build_Services* and three TestRunner_Teardown_*Services tests
+- [ ] Manual: create a test fixture project with `.dev/config.yaml` declaring `services.postgres: true`, push it, observe runner logs show `==> provisioning postgres database`
+- [ ] After successful build: `docker exec paas-postgres psql -U postgres -c "\l"` shows the new database
+- [ ] After successful build: `docker exec paas-postgres psql -U postgres -c "\du"` shows the new user
+- [ ] After successful build: app's `.env` contains `DATABASE_URL=postgres://...`
+- [ ] After successful build: `docker inspect <env-id>-app | jq '.[0].NetworkSettings.Networks | keys'` shows `paas-net` attached
+- [ ] Branch delete: `docker exec paas-postgres psql -U postgres -c "\l"` no longer lists the test database
+- [ ] Branch delete: `cat /data/compose/16/data/.credentials/store.json | jq '.project_secrets | keys'` no longer includes the env-id of the deleted env
+- [ ] Same battery for redis with `services.redis: true` (`ACL LIST` instead of `\l`/`\du`)
 
 ## Plan 4 — Pre/post-deploy hooks
 *(populated when plan 4 is written)*
