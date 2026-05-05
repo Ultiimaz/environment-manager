@@ -131,14 +131,38 @@ func newTestProvisioner(t *testing.T, fd *fakeDocker, fc *fakeCreds) *Provisione
 }
 
 func TestSlugUserName(t *testing.T) {
-	if got := SlugUserName("stripe-payments", "feature-x"); got != "stripepayments_feature_x" {
-		t.Errorf("got %q", got)
+	cases := []struct {
+		name, project, branch, want string
+	}{
+		{"plain", "myapp", "main", "myapp_main"},
+		{"hyphens stripped from project", "stripe-payments", "main", "stripepayments_main"},
+		{"hyphens replaced in branch", "stripe-payments", "feature-x", "stripepayments_feature_x"},
+		{"uppercase folded", "MyApp", "Main", "myapp_main"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SlugUserName(tc.project, tc.branch); got != tc.want {
+				t.Errorf("got %q want %q", got, tc.want)
+			}
+		})
 	}
 }
 
 func TestSlugKeyPrefix(t *testing.T) {
-	if got := SlugKeyPrefix("stripe-payments", "main"); got != "stripe-payments:main" {
-		t.Errorf("got %q", got)
+	cases := []struct {
+		name, project, branch, want string
+	}{
+		{"plain", "stripe-payments", "main", "stripe-payments:main"},
+		{"underscores in project become hyphens", "stripe_payments", "main", "stripe-payments:main"},
+		{"uppercase project lowered", "Stripe-Payments", "main", "stripe-payments:main"},
+		{"uppercase branch lowered", "stripe-payments", "Main", "stripe-payments:main"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := SlugKeyPrefix(tc.project, tc.branch); got != tc.want {
+				t.Errorf("got %q want %q", got, tc.want)
+			}
+		})
 	}
 }
 
@@ -181,6 +205,9 @@ func TestRedisEnsureService_FreshBoot(t *testing.T) {
 	spec := fd.runCalls[0]
 	if spec.Name != ContainerName || spec.Image != Image {
 		t.Errorf("wrong spec: %+v", spec)
+	}
+	if spec.Labels["env-manager.singleton"] != "redis" {
+		t.Errorf("singleton label missing or wrong: got %q", spec.Labels["env-manager.singleton"])
 	}
 	if spec.Volumes[VolumeName] != MountPath {
 		t.Errorf("volume mount wrong: %v", spec.Volumes)

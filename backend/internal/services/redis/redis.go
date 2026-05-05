@@ -100,9 +100,11 @@ func SlugUserName(projectName, branchSlug string) string {
 }
 
 // SlugKeyPrefix produces the Redis key prefix scope: "<project>:<branch>".
-// Hyphens in either are kept (they are valid in Redis key names).
+// Both halves are lowercased; underscores in the project name become hyphens
+// (so "stripe_payments" and "stripe-payments" produce the same prefix).
+// Hyphens in the branch slug are kept (they are valid in Redis key names).
 func SlugKeyPrefix(projectName, branchSlug string) string {
-	return strings.ToLower(strings.ReplaceAll(projectName, "_", "-")) + ":" + branchSlug
+	return strings.ToLower(strings.ReplaceAll(projectName, "_", "-")) + ":" + strings.ToLower(branchSlug)
 }
 
 // EnsureService idempotently brings paas-redis into a running state.
