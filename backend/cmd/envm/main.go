@@ -37,6 +37,8 @@ func main() {
 		runConfig(os.Args[2:])
 	case "secrets":
 		runSecrets(os.Args[2:])
+	case "projects":
+		runProjects(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -56,6 +58,10 @@ Usage:
   envm secrets delete <project> KEY
   envm secrets import <project> path/to/.env
   envm secrets check <project>
+  envm projects list
+  envm projects onboard <git-url> [--token PAT]
+  envm projects show <project-id>
+  envm projects delete <project-id> [--yes]
   envm config show
   envm version
 
