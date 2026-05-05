@@ -103,8 +103,8 @@ func TestRunner_BuildSuccess(t *testing.T) {
 		t.Fatalf("Build: %v", err)
 	}
 
-	if exec.calls != 1 {
-		t.Errorf("exec calls = %d, want 1", exec.calls)
+	if exec.calls != 2 {
+		t.Errorf("exec calls = %d, want 2 (build + up)", exec.calls)
 	}
 	gotEnv, _ := store.GetEnvironment(env.ProjectID, env.BranchSlug)
 	if gotEnv.Status != models.EnvStatusRunning {
