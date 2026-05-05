@@ -128,6 +128,61 @@ func TestBuildsHandler_Trigger_InvalidEnvID(t *testing.T) {
 	}
 }
 
+func TestBuildsHandler_List(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := projects.NewStore(dir)
+	_ = store.SaveProject(&models.Project{ID: "p1", Name: "myapp"})
+	now := time.Now().UTC()
+	_ = store.SaveBuild("p1", &models.Build{ID: "b1", EnvID: "p1--main", Status: models.BuildStatusSuccess, StartedAt: now.Add(-1 * time.Minute)})
+	_ = store.SaveBuild("p1", &models.Build{ID: "b2", EnvID: "p1--main", Status: models.BuildStatusRunning, StartedAt: now})
+
+	h := NewBuildsHandler(store, nil, dir, zap.NewNop())
+	req := httptest.NewRequest("GET", "/api/v1/envs/p1--main/builds", nil)
+	req = withChiURLParams(req, map[string]string{"id": "p1--main"})
+	rec := httptest.NewRecorder()
+	h.List(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+	var got []*models.Build
+	if err := json.NewDecoder(rec.Body).Decode(&got); err != nil {
+		t.Fatal(err)
+	}
+	if len(got) != 2 {
+		t.Errorf("got %d builds, want 2", len(got))
+	}
+	// Most-recent first.
+	if len(got) >= 2 && got[0].ID != "b2" {
+		t.Errorf("expected b2 first (most recent), got %q", got[0].ID)
+	}
+}
+
+func TestBuildsHandler_List_InvalidEnvID(t *testing.T) {
+	h, _, _ := newBuildsHandlerTest(t)
+	req := httptest.NewRequest("GET", "/api/v1/envs/no-double-dash/builds", nil)
+	req = withChiURLParams(req, map[string]string{"id": "no-double-dash"})
+	rec := httptest.NewRecorder()
+	h.List(rec, req)
+	if rec.Code != http.StatusBadRequest {
+		t.Errorf("status = %d, want 400", rec.Code)
+	}
+}
+
+func TestBuildsHandler_List_EmptyReturnsArray(t *testing.T) {
+	h, _, _ := newBuildsHandlerTest(t)
+	req := httptest.NewRequest("GET", "/api/v1/envs/missing--main/builds", nil)
+	req = withChiURLParams(req, map[string]string{"id": "missing--main"})
+	rec := httptest.NewRecorder()
+	h.List(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+	body := rec.Body.String()
+	if body != "[]\n" && body != "[]" {
+		t.Errorf("body = %q, want [] for empty list", body)
+	}
+}
+
 func writeFiles(root string, files map[string]string) error {
 	for rel, content := range files {
 		path := filepath.Join(root, rel)

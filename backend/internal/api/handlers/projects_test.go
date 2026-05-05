@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -13,6 +15,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/environment-manager/backend/internal/builder"
 	"github.com/environment-manager/backend/internal/credentials"
 	"github.com/environment-manager/backend/internal/models"
 	"github.com/environment-manager/backend/internal/projects"
@@ -83,7 +86,7 @@ func newTestProjectsHandler(t *testing.T) (*ProjectsHandler, string) {
 		t.Fatal(err)
 	}
 	logger := zap.NewNop()
-	h := NewProjectsHandler(store, reposManager, nil, "home", logger)
+	h := NewProjectsHandler(store, reposManager, nil, "home", logger, nil)
 	return h, dataDir
 }
 
@@ -247,7 +250,7 @@ func TestProjectsHandler_GetSecret(t *testing.T) {
 	_ = store.SaveProject(&models.Project{ID: "p1", Name: "myapp"})
 	_ = creds.SaveProjectSecret("p1", "STRIPE_KEY", "sk_test_xyz")
 
-	h := NewProjectsHandler(store, nil, creds, "home", zap.NewNop())
+	h := NewProjectsHandler(store, nil, creds, "home", zap.NewNop(), nil)
 
 	t.Run("without reveal param returns 400", func(t *testing.T) {
 		req := httptest.NewRequest("GET", "/api/v1/projects/p1/secrets/STRIPE_KEY", nil)
@@ -285,6 +288,56 @@ func TestProjectsHandler_GetSecret(t *testing.T) {
 			t.Errorf("status = %d, want 404", rec.Code)
 		}
 	})
+}
+
+func TestProjectsHandler_Delete(t *testing.T) {
+	dir := t.TempDir()
+	store, _ := projects.NewStore(dir)
+	credKey := make([]byte, 32)
+	for i := range credKey {
+		credKey[i] = byte(i)
+	}
+	creds, _ := credentials.NewStore(filepath.Join(dir, "creds.json"), credKey)
+
+	repoPath := filepath.Join(dir, "repo")
+	_ = os.MkdirAll(repoPath, 0755)
+	_ = store.SaveProject(&models.Project{ID: "p1", Name: "myapp", LocalPath: repoPath})
+	_ = store.SaveEnvironment(&models.Environment{ID: "p1--main", ProjectID: "p1", BranchSlug: "main"})
+	_ = creds.SaveProjectSecret("p1", "STRIPE_KEY", "sk_test")
+
+	// Use the real runner with a fake compose executor so Teardown doesn't fail.
+	queue := builder.NewQueue()
+	runner := builder.NewRunner(store, &fakeComposeExec{}, dir, "", queue, zap.NewNop(), creds)
+
+	h := NewProjectsHandler(store, nil, creds, "home", zap.NewNop(), runner)
+
+	req := httptest.NewRequest("DELETE", "/api/v1/projects/p1", nil)
+	req = withChiURLParams(req, map[string]string{"id": "p1"})
+	rec := httptest.NewRecorder()
+	h.Delete(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200; body = %s", rec.Code, rec.Body.String())
+	}
+
+	// Project row gone.
+	if _, err := store.GetProject("p1"); !errors.Is(err, projects.ErrNotFound) {
+		t.Errorf("expected ErrNotFound after delete, got %v", err)
+	}
+	// Repo dir gone.
+	if _, err := os.Stat(repoPath); !os.IsNotExist(err) {
+		t.Errorf("repo dir not removed: %v", err)
+	}
+	// Project secrets gone.
+	if keys, _ := creds.ListProjectSecretKeys("p1"); len(keys) != 0 {
+		t.Errorf("expected 0 cred-store keys after delete, got %d", len(keys))
+	}
+}
+
+// fakeComposeExec is a compose executor that always succeeds.
+type fakeComposeExec struct{}
+
+func (fakeComposeExec) Compose(ctx context.Context, _ string, _ string, _ []string, _ io.Writer, _ io.Writer) error {
+	return nil
 }
 
 // withChiURLParams installs URL params into a request's chi RouteContext so

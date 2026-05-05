@@ -27,6 +27,10 @@ import (
 	"github.com/environment-manager/backend/internal/services/redis"
 )
 
+// version is set at build time via `-ldflags "-X main.version=..."`. Defaults
+// to "v2" so the /api/v1/settings response is meaningful even without ldflags.
+var version = "v2"
+
 func main() {
 	logger, _ := zap.NewProduction()
 	defer logger.Sync()
@@ -70,15 +74,18 @@ func main() {
 
 	// Service-plane bootstrap + long-lived provisioners (Flow G + Plan 3b wiring).
 	// dockerCli stays alive for the lifetime of the process so the runner's
-	// provisioners can reuse it.
+	// provisioners and the services-status handler can reuse it.
 	var pgProvisioner *postgres.Provisioner
 	var rdProvisioner *redis.Provisioner
+	var dockerCli *docker.Client
 	if credStore == nil {
 		logger.Warn("Service-plane skipped: credential store unavailable")
 	} else {
-		dockerCli, err := docker.NewClient()
-		if err != nil {
-			logger.Error("Service-plane: docker client init failed", zap.Error(err))
+		var derr error
+		dockerCli, derr = docker.NewClient()
+		if derr != nil {
+			logger.Error("Service-plane: docker client init failed", zap.Error(derr))
+			dockerCli = nil
 		} else {
 			defer func() { _ = dockerCli.Close() }()
 			pgProvisioner = postgres.New(realdocker.NewPostgres(dockerCli), credStore, logger)
@@ -150,14 +157,17 @@ func main() {
 
 	// Router
 	router := api.NewRouter(api.RouterConfig{
-		ReposManager:    reposManager,
-		ProjectsStore:   projectsStore,
-		Builder:         buildRunner,
-		CredentialStore: credStore,
-		StaticDir:       cfg.StaticDir,
-		DataDir:         cfg.DataDir,
-		BaseDomain:      cfg.BaseDomain,
-		Logger:          logger,
+		ReposManager:     reposManager,
+		ProjectsStore:    projectsStore,
+		Builder:          buildRunner,
+		CredentialStore:  credStore,
+		StaticDir:        cfg.StaticDir,
+		DataDir:          cfg.DataDir,
+		BaseDomain:       cfg.BaseDomain,
+		Logger:           logger,
+		DockerClient:     dockerCli,
+		LetsencryptEmail: cfg.LetsencryptEmail,
+		Version:          version,
 	})
 
 	server := &http.Server{

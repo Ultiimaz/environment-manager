@@ -93,7 +93,20 @@ After merge + redeploy:
 - [ ] env-manager Docker image now ships `/usr/local/bin/envm` — `docker exec env-manager envm version` works
 
 ## Plan 6b — Project/build/env/services CLI commands
-*(populated when Plan 6b is written)*
+
+After merge + redeploy:
+- [ ] `cd backend && go test ./...` — full suite green
+- [ ] `curl https://<env-manager>/api/v1/services/postgres` returns JSON; `curl https://<env-manager>/api/v1/settings` returns presence flags
+- [ ] `envm projects list` returns tabular project list
+- [ ] `envm projects onboard https://github.com/<user>/<repo>.git --token <pat>` creates a new project
+- [ ] `envm projects show <id>` displays project metadata + envs
+- [ ] `envm projects delete <id> --yes` tears down all envs + repo dir + secrets
+- [ ] `envm builds trigger <project>/<env>` starts a build; response shows build_id
+- [ ] `envm builds logs <project>/<env>` streams the build log via WS
+- [ ] `envm builds list <project>/<env>` shows recent builds (most-recent first)
+- [ ] `envm envs destroy <project>/<env> --yes` removes a preview env
+- [ ] `envm envs destroy <project>/main --yes` rejects with 400 (prod protection)
+- [ ] `envm services status` shows paas-postgres + paas-redis
 
 ## Plan 7 — UI rebuild
 *(populated when plan 7 is written)*
