@@ -1,15 +1,13 @@
 import { Link, useLocation } from "react-router-dom"
 import {
-  LayoutDashboard,
-  Box,
-  HardDrive,
-  Layers,
-  Network,
+  Home,
+  Rocket,
+  Hammer,
+  Database,
   Settings,
-  GitBranch,
   ChevronLeft,
   ChevronRight,
-  Rocket,
+  Box,
 } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
@@ -23,46 +21,11 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  {
-    title: "Dashboard",
-    href: "/",
-    icon: LayoutDashboard,
-  },
-  {
-    title: "Projects",
-    href: "/projects",
-    icon: Rocket,
-  },
-  {
-    title: "Repositories",
-    href: "/repos",
-    icon: GitBranch,
-  },
-  {
-    title: "Containers",
-    href: "/containers",
-    icon: Box,
-  },
-  {
-    title: "Volumes",
-    href: "/volumes",
-    icon: HardDrive,
-  },
-  {
-    title: "Compose",
-    href: "/compose",
-    icon: Layers,
-  },
-  {
-    title: "Network",
-    href: "/network",
-    icon: Network,
-  },
-  {
-    title: "Settings",
-    href: "/settings",
-    icon: Settings,
-  },
+  { title: "Home", href: "/", icon: Home },
+  { title: "Projects", href: "/projects", icon: Rocket },
+  { title: "Builds", href: "/builds", icon: Hammer },
+  { title: "Services", href: "/services", icon: Database },
+  { title: "Settings", href: "/settings", icon: Settings },
 ]
 
 export function Sidebar() {
