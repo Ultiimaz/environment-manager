@@ -6,6 +6,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/environment-manager/backend/internal/iac"
 	"github.com/environment-manager/backend/internal/models"
 )
 
@@ -227,5 +228,90 @@ func mustContain(t *testing.T, haystack, needle string) {
 	t.Helper()
 	if !strings.Contains(haystack, needle) {
 		t.Errorf("expected output to contain %q\ngot:\n%s", needle, haystack)
+	}
+}
+
+func TestInjectTraefikLabels_V2_HomeAndPublicRouters(t *testing.T) {
+	dir := t.TempDir()
+	input := "services:\n  app:\n    image: alpine\n"
+	path := writeCompose(t, dir, input)
+
+	env := &models.Environment{
+		ID:         "stripe--main",
+		URL:        "stripe-payments.home",
+		Kind:       models.EnvKindProd,
+		BranchSlug: "main",
+	}
+	domains := &iac.Domains{
+		Prod: []string{"blocksweb.nl", "www.blocksweb.nl"},
+	}
+	err := InjectTraefikLabels(path, env, &models.ExposeSpec{Service: "app", Port: 80}, TraefikOptions{
+		ProxyNetwork:     "my-net",
+		Domains:          domains,
+		LetsencryptEmail: "ops@example.com",
+	})
+	if err != nil {
+		t.Fatalf("InjectTraefikLabels: %v", err)
+	}
+	out := readCompose(t, path)
+
+	// Home router: HTTP entrypoint, Host(`stripe-payments.home`).
+	mustContain(t, out, "traefik.http.routers.stripe--main-home.rule=Host(`stripe-payments.home`)")
+	mustContain(t, out, "traefik.http.routers.stripe--main-home.entrypoints=web")
+
+	// Public router: HTTPS entrypoint, Host union, TLS+LE.
+	mustContain(t, out, "traefik.http.routers.stripe--main-public.rule=Host(`blocksweb.nl`) || Host(`www.blocksweb.nl`)")
+	mustContain(t, out, "traefik.http.routers.stripe--main-public.entrypoints=websecure")
+	mustContain(t, out, "traefik.http.routers.stripe--main-public.tls=true")
+	mustContain(t, out, "traefik.http.routers.stripe--main-public.tls.certresolver=letsencrypt")
+
+	// Backend service definition still points at the exposed port.
+	mustContain(t, out, "traefik.http.services.stripe--main.loadbalancer.server.port=80")
+}
+
+func TestInjectTraefikLabels_V2_DomainsNilUsesLegacyPath(t *testing.T) {
+	// Confirm the v1 path still emits exactly the legacy single router.
+	dir := t.TempDir()
+	input := "services:\n  app:\n    image: alpine\n"
+	path := writeCompose(t, dir, input)
+
+	env := &models.Environment{ID: "p--main", URL: "myapp.home", Kind: models.EnvKindProd}
+	err := InjectTraefikLabels(path, env, &models.ExposeSpec{Service: "app", Port: 8080}, TraefikOptions{
+		ProxyNetwork: "my-net",
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := readCompose(t, path)
+	// Legacy single router uses unsuffixed env-id.
+	mustContain(t, out, "traefik.http.routers.p--main.rule=Host(`myapp.home`)")
+	mustContain(t, out, "traefik.http.routers.p--main.entrypoints=web")
+	// No -home or -public suffixes when Domains is nil.
+	if strings.Contains(out, "p--main-home") || strings.Contains(out, "p--main-public") {
+		t.Errorf("legacy path should not emit -home or -public routers; got:\n%s", out)
+	}
+}
+
+func TestInjectTraefikLabels_V2_LeEmailEmptyFallbackToHttp(t *testing.T) {
+	dir := t.TempDir()
+	input := "services:\n  app:\n    image: alpine\n"
+	path := writeCompose(t, dir, input)
+
+	env := &models.Environment{ID: "p--main", URL: "myapp.home", Kind: models.EnvKindProd}
+	err := InjectTraefikLabels(path, env, &models.ExposeSpec{Service: "app", Port: 80}, TraefikOptions{
+		ProxyNetwork:     "my-net",
+		Domains:          &iac.Domains{Prod: []string{"blocksweb.nl"}},
+		LetsencryptEmail: "", // unset
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	out := readCompose(t, path)
+	// Public router exists but on web entrypoint (no TLS, no LE).
+	mustContain(t, out, "traefik.http.routers.p--main-public.rule=Host(`blocksweb.nl`)")
+	mustContain(t, out, "traefik.http.routers.p--main-public.entrypoints=web")
+	// No tls=true label.
+	if strings.Contains(out, "p--main-public.tls=true") {
+		t.Errorf("expected no TLS label when LetsencryptEmail is empty; got:\n%s", out)
 	}
 }

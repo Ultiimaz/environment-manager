@@ -79,15 +79,9 @@ func InjectTraefikLabels(composePath string, env *models.Environment, expose *mo
 		return fmt.Errorf("target service %q not found in compose", targetService)
 	}
 
-	// Router name is the environment ID (already slug-safe).
-	routerName := env.ID
-	labels := map[string]string{
-		"traefik.enable": "true",
-		fmt.Sprintf("traefik.http.routers.%s.rule", routerName):                      fmt.Sprintf("Host(`%s`)", env.URL),
-		fmt.Sprintf("traefik.http.routers.%s.entrypoints", routerName):               "web",
-		fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port", routerName): strconv.Itoa(targetPort),
-		"traefik.docker.network": opts.ProxyNetwork,
-	}
+	// Compute label set: legacy single-router path when Domains is nil,
+	// multi-domain v2 path otherwise.
+	labels := buildTraefikLabels(env, targetPort, opts)
 
 	labelsEnsureLabels(svc, labels)
 	labelsEnsureNetworkOnService(svc, opts.ProxyNetwork)
@@ -98,6 +92,73 @@ func InjectTraefikLabels(composePath string, env *models.Environment, expose *mo
 		return fmt.Errorf("marshal compose YAML: %w", err)
 	}
 	return os.WriteFile(composePath, out, 0644)
+}
+
+// buildTraefikLabels assembles the Traefik label map for a service.
+//
+// Two modes:
+//
+//   - Legacy: opts.Domains == nil. Emits one HTTP router named env.ID with
+//     Host(env.URL). Existing behaviour, preserved exactly.
+//
+//   - v2: opts.Domains != nil. Emits a -home HTTP router for env.URL plus
+//     a -public router for the iac-declared custom domains (HTTPS+LE when
+//     opts.LetsencryptEmail is set, HTTP fallback otherwise). All routers
+//     share the same backend service definition (env.ID) via an explicit
+//     `.service` label on each suffixed router.
+func buildTraefikLabels(env *models.Environment, targetPort int, opts TraefikOptions) map[string]string {
+	labels := map[string]string{
+		"traefik.enable":         "true",
+		"traefik.docker.network": opts.ProxyNetwork,
+		fmt.Sprintf("traefik.http.services.%s.loadbalancer.server.port", env.ID): strconv.Itoa(targetPort),
+	}
+
+	if opts.Domains == nil {
+		// Legacy single HTTP router on env.URL — preserve exact existing shape.
+		labels[fmt.Sprintf("traefik.http.routers.%s.rule", env.ID)] = fmt.Sprintf("Host(`%s`)", env.URL)
+		labels[fmt.Sprintf("traefik.http.routers.%s.entrypoints", env.ID)] = "web"
+		return labels
+	}
+
+	// v2 path. Emit -home router for env.URL.
+	if env.URL != "" {
+		homeRouter := env.ID + "-home"
+		labels[fmt.Sprintf("traefik.http.routers.%s.rule", homeRouter)] = fmt.Sprintf("Host(`%s`)", env.URL)
+		labels[fmt.Sprintf("traefik.http.routers.%s.entrypoints", homeRouter)] = "web"
+		labels[fmt.Sprintf("traefik.http.routers.%s.service", homeRouter)] = env.ID
+	}
+
+	// Public domains: prod uses Domains.Prod directly; preview is added in Task 4.
+	publicHosts := opts.Domains.Prod
+
+	if len(publicHosts) > 0 {
+		publicRouter := env.ID + "-public"
+		labels[fmt.Sprintf("traefik.http.routers.%s.rule", publicRouter)] = formatHostRule(publicHosts)
+		labels[fmt.Sprintf("traefik.http.routers.%s.service", publicRouter)] = env.ID
+		if opts.LetsencryptEmail != "" {
+			labels[fmt.Sprintf("traefik.http.routers.%s.entrypoints", publicRouter)] = "websecure"
+			labels[fmt.Sprintf("traefik.http.routers.%s.tls", publicRouter)] = "true"
+			labels[fmt.Sprintf("traefik.http.routers.%s.tls.certresolver", publicRouter)] = "letsencrypt"
+		} else {
+			// LE not configured — emit HTTP-only public router so the domains
+			// are at least reachable. Caller (runner) is expected to log a
+			// warning. Task 3 adds the redirect-to-HTTPS router only when
+			// LE is configured.
+			labels[fmt.Sprintf("traefik.http.routers.%s.entrypoints", publicRouter)] = "web"
+		}
+	}
+
+	return labels
+}
+
+// formatHostRule joins multiple hostnames into a Traefik Host(...) rule
+// using the || operator, e.g. Host(`a.com`) || Host(`b.com`).
+func formatHostRule(hosts []string) string {
+	parts := make([]string, len(hosts))
+	for i, h := range hosts {
+		parts[i] = fmt.Sprintf("Host(`%s`)", h)
+	}
+	return strings.Join(parts, " || ")
 }
 
 // resolveTarget picks the service name + port to route. Returns ok=false when
