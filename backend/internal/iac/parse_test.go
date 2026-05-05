@@ -2,6 +2,7 @@ package iac
 
 import (
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -219,4 +220,87 @@ func TestParse_DomainsProdRejectsInvalid(t *testing.T) {
 // regardless of whitespace or special characters.
 func yamlQuote(s string) string {
 	return "\"" + strings.ReplaceAll(s, "\"", "\\\"") + "\""
+}
+
+func TestParse_DomainsPreviewHappyPath(t *testing.T) {
+	input := []byte(`project_name: stripe-payments
+expose:
+  service: app
+  port: 80
+domains:
+  preview:
+    pattern: "{branch}.stripe-payments.blocksweb.nl"
+`)
+	got, err := Parse(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	want := "{branch}.stripe-payments.blocksweb.nl"
+	if got.Domains.Preview.Pattern != want {
+		t.Fatalf("got %q want %q", got.Domains.Preview.Pattern, want)
+	}
+}
+
+func TestParse_DomainsPreviewOptional(t *testing.T) {
+	// Omitting domains.preview entirely is fine.
+	input := []byte(`project_name: app
+expose:
+  service: app
+  port: 80
+`)
+	got, err := Parse(input)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got.Domains.Preview.Pattern != "" {
+		t.Fatalf("expected empty pattern, got %q", got.Domains.Preview.Pattern)
+	}
+}
+
+func TestParse_DomainsPreviewRequiresBranchPlaceholder(t *testing.T) {
+	input := []byte(`project_name: app
+expose:
+  service: app
+  port: 80
+domains:
+  preview:
+    pattern: "preview.example.com"
+`)
+	_, err := Parse(input)
+	if err == nil {
+		t.Fatalf("expected error for missing {branch}, got nil")
+	}
+	if !strings.Contains(err.Error(), "{branch}") {
+		t.Fatalf("expected error to mention {branch}, got %q", err.Error())
+	}
+}
+
+func TestParse_DomainsPreviewMustFormValidHostname(t *testing.T) {
+	cases := []struct {
+		name    string
+		pattern string
+	}{
+		{"trailing dot", "{branch}.example.com."},
+		{"underscore", "{branch}_preview.example.com"},
+		{"bare branch placeholder", "{branch}"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			input := fmt.Sprintf(`project_name: app
+expose:
+  service: app
+  port: 80
+domains:
+  preview:
+    pattern: %q
+`, tc.pattern)
+			_, err := Parse([]byte(input))
+			if err == nil {
+				t.Fatalf("expected invalid-hostname error for %q", tc.pattern)
+			}
+			if !strings.Contains(err.Error(), "domains.preview.pattern") {
+				t.Fatalf("expected error to mention domains.preview.pattern, got %q", err.Error())
+			}
+		})
+	}
 }

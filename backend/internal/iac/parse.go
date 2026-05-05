@@ -60,6 +60,16 @@ func validate(c *Config) error {
 			return fmt.Errorf("%w: domains.prod[%d] %q is not a valid hostname", ErrInvalidConfig, i, d)
 		}
 	}
+	if c.Domains.Preview.Pattern != "" {
+		if !strings.Contains(c.Domains.Preview.Pattern, "{branch}") {
+			return fmt.Errorf("%w: domains.preview.pattern must contain {branch}", ErrInvalidConfig)
+		}
+		// Substitute a sample slug and validate the result is a valid hostname.
+		sample := strings.ReplaceAll(c.Domains.Preview.Pattern, "{branch}", "branch-x")
+		if !validHostname(sample) {
+			return fmt.Errorf("%w: domains.preview.pattern %q is not a valid hostname", ErrInvalidConfig, c.Domains.Preview.Pattern)
+		}
+	}
 	return nil
 }
 
