@@ -35,6 +35,14 @@ function buildStatusVariant(status: string): 'success' | 'failed' | 'pending' | 
   }
 }
 
+function isLegacyLogPath(path?: string): boolean {
+  // Builds before the per-build log retention fix all share `latest.log`,
+  // which gets overwritten on every new build. The current build's log can
+  // still be served, but every prior legacy entry returns 404 from
+  // /api/v1/builds/{id}/log. Detect them by path suffix.
+  return !!path && path.endsWith('/latest.log')
+}
+
 function relativeTime(iso: string): string {
   const dt = new Date(iso).getTime()
   const now = Date.now()
@@ -193,6 +201,7 @@ function BuildsTable({ builds, tailingLatest, onSelectLatest }: BuildsTableProps
       <tbody>
         {builds.map((b, i) => {
           const isLatest = i === 0
+          const legacy = isLegacyLogPath(b.log_path)
           return (
             <tr key={b.id} className="border-b border-border last:border-0 hover:bg-muted/40">
               <td className="py-2.5 px-4 font-mono">{b.id.slice(0, 8)}</td>
@@ -215,17 +224,22 @@ function BuildsTable({ builds, tailingLatest, onSelectLatest }: BuildsTableProps
                   >
                     {tailingLatest ? 'Tailing' : 'Tail logs'}
                   </Button>
+                ) : legacy ? (
+                  <span
+                    className="text-xs text-muted-foreground/60"
+                    title="Log not retained — predates per-build retention"
+                  >
+                    not retained
+                  </span>
                 ) : (
-                  <Link
-                    to={`#`}
-                    onClick={(e) => {
-                      e.preventDefault()
-                      window.open(`/api/v1/builds/${b.id}/log`, '_blank')
-                    }}
+                  <a
+                    href={`/api/v1/builds/${b.id}/log`}
+                    target="_blank"
+                    rel="noreferrer"
                     className="text-xs text-muted-foreground hover:text-foreground"
                   >
                     open log
-                  </Link>
+                  </a>
                 )}
               </td>
             </tr>

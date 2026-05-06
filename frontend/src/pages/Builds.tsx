@@ -57,10 +57,19 @@ interface LogPanelProps {
   onClose: () => void
 }
 
+function isLegacyLogPath(path?: string): boolean {
+  // Builds before the per-build log retention fix all share `latest.log`
+  // (overwritten on every new build). The /api/v1/builds/{id}/log endpoint
+  // 404s for them.
+  return !!path && path.endsWith('/latest.log')
+}
+
 function LogPanel({ build, onClose }: LogPanelProps) {
+  const legacy = isLegacyLogPath(build.log_path)
   const { data, isLoading, error } = useQuery({
     queryKey: ['build-log', build.id],
     queryFn: () => getBuildLog(build.id),
+    enabled: !legacy,
   })
   return (
     <Section
@@ -71,13 +80,18 @@ function LogPanel({ build, onClose }: LogPanelProps) {
       }
       action={<Button variant="ghost" size="sm" onClick={onClose}>Close</Button>}
     >
-      {isLoading && <div className="text-xs text-muted-foreground">loading log…</div>}
-      {error && (
+      {legacy && (
+        <div className="text-xs text-muted-foreground">
+          Log not retained — this build predates per-build log retention.
+        </div>
+      )}
+      {!legacy && isLoading && <div className="text-xs text-muted-foreground">loading log…</div>}
+      {!legacy && error && (
         <div className="text-xs text-red-400">
           {(error as Error).message}
         </div>
       )}
-      {data && (
+      {!legacy && data && (
         <pre className="text-xs font-mono whitespace-pre-wrap bg-background border border-border p-3 rounded max-h-[60vh] overflow-y-auto">
           {data || '(empty)'}
         </pre>
