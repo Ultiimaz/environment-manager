@@ -52,8 +52,11 @@ const STATUS_TOKENS = {
   default: { dot: 'bg-muted-foreground', text: 'text-muted-foreground', bg: 'bg-secondary', border: 'border-border', pulse: false, accent: '' },
 } as const
 
+type StatusTok = typeof STATUS_TOKENS.default
+const STATUS_LOOKUP = STATUS_TOKENS as unknown as Record<string, StatusTok>
+
 function StatusPill({ status }: { status: string }) {
-  const tok = (STATUS_TOKENS as Record<string, (typeof STATUS_TOKENS)['default']>)[status] ?? STATUS_TOKENS.default
+  const tok = STATUS_LOOKUP[status] ?? STATUS_TOKENS.default
   return (
     <span
       className={cn(
@@ -289,7 +292,7 @@ export default function Builds() {
               </thead>
               <tbody>
                 {filtered.slice(0, 100).map((b) => {
-                  const tok = (STATUS_TOKENS as Record<string, (typeof STATUS_TOKENS)['default']>)[b.status] ?? STATUS_TOKENS.default
+                  const tok = STATUS_LOOKUP[b.status] ?? STATUS_TOKENS.default
                   const isManual = b.triggered_by !== 'webhook' && b.triggered_by !== 'github-actions'
                   return (
                     <tr

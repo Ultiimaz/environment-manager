@@ -27,8 +27,10 @@ const STATUS_TOKENS = {
   default: { dot: 'bg-muted-foreground', text: 'text-muted-foreground', bg: 'bg-secondary', border: 'border-border', pulse: false },
 } as const
 
+const STATUS_LOOKUP = STATUS_TOKENS as unknown as Record<string, typeof STATUS_TOKENS.default>
+
 function StatusPill({ status }: { status: string }) {
-  const tok = (STATUS_TOKENS as Record<string, (typeof STATUS_TOKENS)['default']>)[status] ?? STATUS_TOKENS.default
+  const tok = STATUS_LOOKUP[status] ?? STATUS_TOKENS.default
   return (
     <span
       className={cn(
