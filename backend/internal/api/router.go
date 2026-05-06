@@ -77,6 +77,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		r.Get("/projects/{id}", projectsHandler.Get)
 		r.Get("/projects/{id}/secrets", projectsHandler.ListSecrets)
 		r.Get("/envs/{id}/builds", buildsHandler.List)
+		r.Get("/builds/{id}/log", buildsHandler.GetLog)
 		r.Get("/services/postgres", servicesHandler.Postgres)
 		r.Get("/services/redis", servicesHandler.Redis)
 		r.Get("/settings", settingsHandler.Get)

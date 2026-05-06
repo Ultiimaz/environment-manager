@@ -165,7 +165,15 @@ func (h *BuildsHandler) StreamLogs(w http.ResponseWriter, r *http.Request) {
 	}
 	defer conn.Close()
 
-	logPath := filepath.Join(h.dataDir, "builds", env.ID, "latest.log")
+	// Source from the env's most-recent build (was: shared latest.log file
+	// that every build overwrote). Each build now has its own
+	// <build_id>.log file, so we resolve to the latest build to keep the
+	// envId-based WS API stable.
+	logPath := h.latestBuildLogPath(env)
+	if logPath == "" {
+		_ = conn.WriteJSON(map[string]string{"error": "no builds for env"})
+		return
+	}
 	f, err := os.Open(logPath)
 	if err != nil {
 		_ = conn.WriteJSON(map[string]string{"error": "no log available"})
@@ -193,4 +201,73 @@ func (h *BuildsHandler) StreamLogs(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+}
+
+// latestBuildLogPath returns the disk path of the env's most-recent build log,
+// or "" when the env has no recorded builds. Used by StreamLogs to keep its
+// envId-based contract while we move to per-build log files.
+func (h *BuildsHandler) latestBuildLogPath(env *models.Environment) string {
+	builds, err := h.store.ListBuildsForEnv(env.ProjectID, env.ID)
+	if err != nil || len(builds) == 0 {
+		return ""
+	}
+	latest := builds[0]
+	for _, b := range builds[1:] {
+		if b.StartedAt.After(latest.StartedAt) {
+			latest = b
+		}
+	}
+	if latest.LogPath != "" {
+		return latest.LogPath
+	}
+	// Legacy builds were written to "latest.log"; fall back so old records
+	// remain viewable.
+	return filepath.Join(h.dataDir, "builds", env.ID, "latest.log")
+}
+
+// GetLog handles GET /api/v1/builds/{build_id}/log.
+//
+// Returns the raw log file contents for any historical build. Walks the store
+// to find the build by ID — O(N) over all builds across all projects, which
+// is acceptable for low-volume home-lab use. Returns 404 when the build is
+// unknown, 500 when the log file is missing on disk.
+//
+// Open GET (no Bearer required) — matches the v2 design where read-only
+// project endpoints are LAN-anonymous.
+func (h *BuildsHandler) GetLog(w http.ResponseWriter, r *http.Request) {
+	buildID := chi.URLParam(r, "id")
+	if buildID == "" {
+		http.Error(w, "build id required", http.StatusBadRequest)
+		return
+	}
+	allProjects, err := h.store.ListProjects()
+	if err != nil {
+		http.Error(w, "store error: "+err.Error(), http.StatusInternalServerError)
+		return
+	}
+	for _, p := range allProjects {
+		envs, _ := h.store.ListEnvironments(p.ID)
+		for _, e := range envs {
+			builds, _ := h.store.ListBuildsForEnv(p.ID, e.ID)
+			for _, b := range builds {
+				if b.ID != buildID {
+					continue
+				}
+				path := b.LogPath
+				if path == "" {
+					http.Error(w, "build has no log path", http.StatusNotFound)
+					return
+				}
+				data, ferr := os.ReadFile(path)
+				if ferr != nil {
+					http.Error(w, "log file unavailable: "+ferr.Error(), http.StatusInternalServerError)
+					return
+				}
+				w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+				_, _ = w.Write(data)
+				return
+			}
+		}
+	}
+	http.Error(w, "build not found", http.StatusNotFound)
 }

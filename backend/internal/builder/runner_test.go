@@ -114,7 +114,7 @@ func TestRunner_BuildSuccess(t *testing.T) {
 	if gotBuild.Status != models.BuildStatusSuccess {
 		t.Errorf("build status = %v, want success", gotBuild.Status)
 	}
-	logPath := filepath.Join(dataDir, "builds", env.ID, "latest.log")
+	logPath := filepath.Join(dataDir, "builds", env.ID, build.ID+".log")
 	if !fileExists(logPath) {
 		t.Errorf("log file %s does not exist", logPath)
 	}
@@ -517,7 +517,7 @@ services:
 	}
 	// Log file should record a WARNING for each unwired provisioner so an
 	// operator who forgot to wire them gets a clear signal.
-	logBytes, err := os.ReadFile(filepath.Join(dataDir, "builds", env.ID, "latest.log"))
+	logBytes, err := os.ReadFile(filepath.Join(dataDir, "builds", env.ID, build.ID+".log"))
 	if err != nil {
 		t.Fatalf("read log: %v", err)
 	}
@@ -957,7 +957,7 @@ domains:
 		t.Fatalf("Build: %v", err)
 	}
 
-	logBytes, err := os.ReadFile(filepath.Join(dataDir, "builds", env.ID, "latest.log"))
+	logBytes, err := os.ReadFile(filepath.Join(dataDir, "builds", env.ID, build.ID+".log"))
 	if err != nil {
 		t.Fatal(err)
 	}

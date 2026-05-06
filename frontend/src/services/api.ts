@@ -159,6 +159,20 @@ export function listBuildsForEnv(envId: string): Promise<Build[]> {
   return fetchApi<Build[]>(`/envs/${envId}/builds`)
 }
 
+// getBuildLog fetches a historical build's log file as plain text. Returns
+// the raw log contents; throws on 404 / non-2xx with a friendly message.
+export async function getBuildLog(buildId: string): Promise<string> {
+  const headers: Record<string, string> = {}
+  const token = getStoredToken()
+  if (token) headers['Authorization'] = `Bearer ${token}`
+  const r = await fetch(`/api/v1/builds/${buildId}/log`, { headers })
+  if (!r.ok) {
+    const text = await r.text().catch(() => '')
+    throw new Error(`HTTP ${r.status}: ${text || r.statusText}`)
+  }
+  return r.text()
+}
+
 // Envs
 export function destroyEnv(envId: string): Promise<unknown> {
   return fetchApi(`/envs/${envId}/destroy`, { method: 'POST' })
