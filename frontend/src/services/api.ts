@@ -201,3 +201,42 @@ export function buildLogWsUrl(envId: string): string {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   return `${proto}//${window.location.host}/ws/envs/${envId}/build-logs`
 }
+
+export function envRuntimeLogWsUrl(envId: string, service?: string): string {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  const qs = service ? `?service=${encodeURIComponent(service)}` : ''
+  return `${proto}//${window.location.host}/ws/envs/${envId}/runtime-logs${qs}`
+}
+
+export function serviceRuntimeLogWsUrl(name: string): string {
+  const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
+  return `${proto}//${window.location.host}/ws/services/${encodeURIComponent(name)}/runtime-logs`
+}
+
+// Topology
+export interface TopologyNode {
+  id: string
+  type: 'service' | 'env' | 'project'
+  label: string
+  status?: string
+  href: string
+  image?: string
+  project?: string
+  branch?: string
+  kind?: string
+}
+
+export interface TopologyEdge {
+  from: string
+  to: string
+  kind: string
+}
+
+export interface TopologyResponse {
+  nodes: TopologyNode[]
+  edges: TopologyEdge[]
+}
+
+export function getTopology(): Promise<TopologyResponse> {
+  return fetchApi<TopologyResponse>('/topology')
+}
