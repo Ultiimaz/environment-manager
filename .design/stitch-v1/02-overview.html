@@ -1,0 +1,384 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Env Manager - Overview</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@400;500;600;700&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        background: '#0A0A0A',
+                        surface: '#111111',
+                        surfaceHover: '#161616',
+                        border: '#1F1F1F',
+                        primary: '#FAFAFA',
+                        secondary: '#A1A1AA',
+                        tertiary: '#52525B',
+                        accent: '#10B981',
+                        status: {
+                            running: '#10B981',
+                            building: '#F59E0B',
+                            failed: '#EF4444',
+                            idle: '#71717A'
+                        }
+                    },
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    fontFamily: {
+                        "headline": ["Geist", "sans-serif"],
+                        "display": ["Geist", "sans-serif"],
+                        "body": ["Geist", "sans-serif"],
+                        "label": ["Geist", "sans-serif"],
+                        "mono": ["Geist Mono", "monospace"]
+                    },
+                },
+            },
+        }
+    </script>
+<style>
+        body {
+            background-color: theme('colors.background');
+            color: theme('colors.primary');
+            font-family: theme('fontFamily.body');
+        }
+    </style>
+</head>
+<body class="antialiased h-screen overflow-hidden flex">
+<!-- SideNavBar (Shared Component) -->
+<aside class="w-[220px] h-screen fixed left-0 top-0 bg-[#0A0A0A] border-r border-[#1F1F1F] flex flex-col h-full py-4 z-50">
+<div class="px-6 mb-8 flex flex-col gap-1">
+<h1 class="font-headline text-lg font-bold text-[#FAFAFA]">Env Manager</h1>
+<span class="font-mono text-[11px] text-secondary">v2.4.0</span>
+</div>
+<nav class="flex-1 flex flex-col gap-1 w-full px-2">
+<!-- Active Tab -->
+<a class="flex items-center gap-3 px-4 py-2 font-body text-[13px] tracking-tight font-medium text-[#FAFAFA] border-l-2 border-[#10B981] bg-[#111111] scale-100 active:scale-[0.98] rounded-r-md" href="#">
+<span class="material-symbols-outlined text-[18px]">dashboard</span>
+<span>Overview</span>
+</a>
+<!-- Inactive Tabs -->
+<a class="flex items-center gap-3 px-4 py-2 font-body text-[13px] tracking-tight font-medium text-[#A1A1AA] border-l-2 border-transparent hover:bg-[#161616] hover:text-[#FAFAFA] transition-colors duration-150 scale-100 active:scale-[0.98] rounded-r-md" href="#">
+<span class="material-symbols-outlined text-[18px]">folder</span>
+<span>Projects</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 font-body text-[13px] tracking-tight font-medium text-[#A1A1AA] border-l-2 border-transparent hover:bg-[#161616] hover:text-[#FAFAFA] transition-colors duration-150 scale-100 active:scale-[0.98] rounded-r-md" href="#">
+<span class="material-symbols-outlined text-[18px]">cloud</span>
+<span>Environments</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 font-body text-[13px] tracking-tight font-medium text-[#A1A1AA] border-l-2 border-transparent hover:bg-[#161616] hover:text-[#FAFAFA] transition-colors duration-150 scale-100 active:scale-[0.98] rounded-r-md" href="#">
+<span class="material-symbols-outlined text-[18px]">layers</span>
+<span>Services</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 font-body text-[13px] tracking-tight font-medium text-[#A1A1AA] border-l-2 border-transparent hover:bg-[#161616] hover:text-[#FAFAFA] transition-colors duration-150 scale-100 active:scale-[0.98] rounded-r-md" href="#">
+<span class="material-symbols-outlined text-[18px]">lan</span>
+<span>Network</span>
+</a>
+<a class="flex items-center gap-3 px-4 py-2 font-body text-[13px] tracking-tight font-medium text-[#A1A1AA] border-l-2 border-transparent hover:bg-[#161616] hover:text-[#FAFAFA] transition-colors duration-150 scale-100 active:scale-[0.98] rounded-r-md" href="#">
+<span class="material-symbols-outlined text-[18px]">build</span>
+<span>Builds</span>
+</a>
+<div class="mt-auto">
+<a class="flex items-center gap-3 px-4 py-2 font-body text-[13px] tracking-tight font-medium text-[#A1A1AA] border-l-2 border-transparent hover:bg-[#161616] hover:text-[#FAFAFA] transition-colors duration-150 scale-100 active:scale-[0.98] rounded-r-md" href="#">
+<span class="material-symbols-outlined text-[18px]">settings</span>
+<span>Settings</span>
+</a>
+</div>
+</nav>
+</aside>
+<!-- Main Content Area -->
+<div class="flex-1 ml-[220px] flex flex-col h-screen relative">
+<!-- TopAppBar (Shared Component) -->
+<header class="h-[52px] fixed top-0 right-0 left-[220px] bg-[#0A0A0A] border-b border-[#1F1F1F] flex items-center justify-between px-6 w-full z-40">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2 text-[13px] font-body text-secondary">
+<span>Home Lab</span>
+<span class="material-symbols-outlined text-[14px]">chevron_right</span>
+<span class="text-primary">Overview</span>
+</div>
+<div class="flex items-center gap-2 border border-status-running/20 bg-status-running/10 rounded-full px-2 py-[2px]">
+<div class="w-1.5 h-1.5 rounded-full bg-status-running"></div>
+<span class="text-[11px] font-mono text-status-running tracking-wide uppercase">12 SERVICES RUNNING</span>
+</div>
+</div>
+<div class="flex items-center gap-4">
+<!-- Search -->
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-2.5 text-secondary text-[16px]">search</span>
+<input class="bg-surface border border-border rounded text-[13px] text-primary pl-8 pr-12 py-1.5 focus:outline-none focus:border-secondary w-64 placeholder-tertiary" placeholder="Search..." type="text"/>
+<div class="absolute right-2 flex items-center gap-1">
+<kbd class="font-mono text-[10px] text-tertiary bg-background px-1 border border-border rounded">⌘K</kbd>
+</div>
+</div>
+<!-- Actions -->
+<div class="flex items-center gap-3 text-secondary">
+<button class="hover:text-[#FAFAFA] transition-colors duration-150 cursor-pointer flex items-center">
+<span class="material-symbols-outlined text-[20px]">refresh</span>
+</button>
+<button class="hover:text-[#FAFAFA] transition-colors duration-150 cursor-pointer flex items-center">
+<span class="material-symbols-outlined text-[20px]">notifications</span>
+</button>
+<button class="hover:text-[#FAFAFA] transition-colors duration-150 cursor-pointer flex items-center">
+<span class="material-symbols-outlined text-[24px]">account_circle</span>
+</button>
+</div>
+</div>
+</header>
+<!-- Scrollable Canvas -->
+<main class="flex-1 overflow-y-auto mt-[52px] p-8">
+<div class="max-w-6xl mx-auto flex flex-col gap-8 pb-12">
+<!-- Page Header -->
+<div>
+<h2 class="text-2xl font-headline font-semibold text-primary mb-1">Overview</h2>
+<p class="text-[13px] text-secondary">All projects, environments, and singleton services on this lab.</p>
+</div>
+<!-- Metrics Row -->
+<div class="grid grid-cols-4 gap-4">
+<!-- Metric Tile 1 -->
+<div class="bg-surface border border-border rounded-lg p-4 flex flex-col gap-2 hover:bg-surfaceHover transition-colors duration-150">
+<span class="text-[11px] font-mono tracking-wide uppercase text-secondary">Projects</span>
+<div class="text-[32px] font-headline font-medium leading-none">5</div>
+<div class="mt-2 h-6 w-full flex items-end gap-1 opacity-50">
+<div class="w-1/6 bg-secondary h-[20%]"></div>
+<div class="w-1/6 bg-secondary h-[40%]"></div>
+<div class="w-1/6 bg-secondary h-[30%]"></div>
+<div class="w-1/6 bg-secondary h-[70%]"></div>
+<div class="w-1/6 bg-secondary h-[50%]"></div>
+<div class="w-1/6 bg-accent h-[100%]"></div>
+</div>
+</div>
+<!-- Metric Tile 2 -->
+<div class="bg-surface border border-border rounded-lg p-4 flex flex-col gap-2 hover:bg-surfaceHover transition-colors duration-150">
+<span class="text-[11px] font-mono tracking-wide uppercase text-secondary">Environments</span>
+<div class="text-[32px] font-headline font-medium leading-none">12</div>
+<div class="mt-2 h-6 w-full flex items-end gap-1 opacity-50">
+<div class="w-1/6 bg-secondary h-[60%]"></div>
+<div class="w-1/6 bg-secondary h-[50%]"></div>
+<div class="w-1/6 bg-secondary h-[80%]"></div>
+<div class="w-1/6 bg-secondary h-[40%]"></div>
+<div class="w-1/6 bg-secondary h-[90%]"></div>
+<div class="w-1/6 bg-accent h-[100%]"></div>
+</div>
+</div>
+<!-- Metric Tile 3 -->
+<div class="bg-surface border border-border rounded-lg p-4 flex flex-col gap-2 hover:bg-surfaceHover transition-colors duration-150">
+<span class="text-[11px] font-mono tracking-wide uppercase text-secondary">Services</span>
+<div class="text-[32px] font-headline font-medium leading-none">3</div>
+<div class="mt-2 h-6 w-full flex items-end gap-1 opacity-50">
+<div class="w-1/6 bg-secondary h-[20%]"></div>
+<div class="w-1/6 bg-secondary h-[20%]"></div>
+<div class="w-1/6 bg-secondary h-[20%]"></div>
+<div class="w-1/6 bg-secondary h-[30%]"></div>
+<div class="w-1/6 bg-secondary h-[40%]"></div>
+<div class="w-1/6 bg-accent h-[100%]"></div>
+</div>
+</div>
+<!-- Metric Tile 4 -->
+<div class="bg-surface border border-border rounded-lg p-4 flex flex-col gap-2 hover:bg-surfaceHover transition-colors duration-150">
+<span class="text-[11px] font-mono tracking-wide uppercase text-secondary">Builds (24h)</span>
+<div class="text-[32px] font-headline font-medium leading-none">47</div>
+<div class="mt-2 h-6 w-full flex items-end gap-1 opacity-50">
+<div class="w-1/6 bg-secondary h-[30%]"></div>
+<div class="w-1/6 bg-secondary h-[50%]"></div>
+<div class="w-1/6 bg-secondary h-[20%]"></div>
+<div class="w-1/6 bg-secondary h-[80%]"></div>
+<div class="w-1/6 bg-secondary h-[60%]"></div>
+<div class="w-1/6 bg-accent h-[100%]"></div>
+</div>
+</div>
+</div>
+<!-- Main Grid -->
+<div class="grid grid-cols-12 gap-6">
+<!-- Left Column: Recent Activity Table -->
+<div class="col-span-12 lg:col-span-7 flex flex-col gap-4">
+<div class="flex items-center justify-between">
+<h3 class="text-[14px] font-medium text-primary">Recent activity</h3>
+<button class="text-[12px] text-secondary hover:text-primary flex items-center gap-1 transition-colors">
+                                View all
+                                <span class="material-symbols-outlined text-[14px]">arrow_forward</span>
+</button>
+</div>
+<div class="bg-surface border border-border rounded-lg overflow-hidden">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-border">
+<th class="px-4 py-3 text-[11px] font-mono uppercase text-secondary font-normal">Timestamp</th>
+<th class="px-4 py-3 text-[11px] font-mono uppercase text-secondary font-normal">Project</th>
+<th class="px-4 py-3 text-[11px] font-mono uppercase text-secondary font-normal">Action</th>
+<th class="px-4 py-3 text-[11px] font-mono uppercase text-secondary font-normal text-right">Outcome</th>
+</tr>
+</thead>
+<tbody class="text-[13px] font-mono">
+<tr class="border-b border-border hover:bg-surfaceHover transition-colors">
+<td class="px-4 py-3 text-tertiary">10:42:01</td>
+<td class="px-4 py-3 text-primary">core-api</td>
+<td class="px-4 py-3 text-secondary">deploy</td>
+<td class="px-4 py-3 text-right">
+<span class="inline-block w-2 h-2 rounded-full bg-status-running mr-1"></span>
+<span class="text-status-running">Success</span>
+</td>
+</tr>
+<tr class="border-b border-border hover:bg-surfaceHover transition-colors">
+<td class="px-4 py-3 text-tertiary">10:38:15</td>
+<td class="px-4 py-3 text-primary">frontend-app</td>
+<td class="px-4 py-3 text-secondary">build-completed</td>
+<td class="px-4 py-3 text-right">
+<span class="inline-block w-2 h-2 rounded-full bg-status-running mr-1"></span>
+<span class="text-status-running">Success</span>
+</td>
+</tr>
+<tr class="border-b border-border hover:bg-surfaceHover transition-colors">
+<td class="px-4 py-3 text-tertiary">10:15:22</td>
+<td class="px-4 py-3 text-primary">data-pipeline</td>
+<td class="px-4 py-3 text-secondary">compose-up</td>
+<td class="px-4 py-3 text-right">
+<span class="inline-block w-2 h-2 rounded-full bg-status-failed mr-1"></span>
+<span class="text-status-failed">Failed</span>
+</td>
+</tr>
+<tr class="border-b border-border hover:bg-surfaceHover transition-colors">
+<td class="px-4 py-3 text-tertiary">09:55:01</td>
+<td class="px-4 py-3 text-primary">auth-service</td>
+<td class="px-4 py-3 text-secondary">deploy</td>
+<td class="px-4 py-3 text-right">
+<span class="inline-block w-2 h-2 rounded-full bg-status-running mr-1"></span>
+<span class="text-status-running">Success</span>
+</td>
+</tr>
+<tr class="hover:bg-surfaceHover transition-colors">
+<td class="px-4 py-3 text-tertiary">09:12:44</td>
+<td class="px-4 py-3 text-primary">metrics-agent</td>
+<td class="px-4 py-3 text-secondary">build-started</td>
+<td class="px-4 py-3 text-right">
+<span class="inline-block w-2 h-2 rounded-full bg-status-building mr-1"></span>
+<span class="text-status-building">Building</span>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Right Column: Service Health Mini-cards -->
+<div class="col-span-12 lg:col-span-5 flex flex-col gap-4">
+<div class="flex items-center justify-between">
+<h3 class="text-[14px] font-medium text-primary">Singleton health</h3>
+<span class="text-[11px] font-mono text-tertiary">3 Active</span>
+</div>
+<div class="flex flex-col gap-3">
+<!-- Mini Card 1 -->
+<div class="bg-surface border border-border rounded-lg p-3 flex flex-col gap-3 hover:border-l-2 hover:border-l-accent transition-all duration-150">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-status-running"></div>
+<span class="font-mono text-[13px] text-primary">paas-postgres</span>
+</div>
+<span class="text-[11px] font-mono text-secondary border border-border px-1.5 py-0.5 rounded bg-background">8 envs</span>
+</div>
+<div class="flex items-center justify-between mt-1">
+<div class="flex flex-col gap-1 w-1/3">
+<span class="text-[10px] text-tertiary font-mono uppercase">CPU 12%</span>
+<div class="h-1 w-full bg-background rounded-full overflow-hidden">
+<div class="h-full bg-accent w-[12%]"></div>
+</div>
+</div>
+<div class="flex flex-col gap-1 w-1/3">
+<span class="text-[10px] text-tertiary font-mono uppercase">MEM 45%</span>
+<div class="h-1 w-full bg-background rounded-full overflow-hidden">
+<div class="h-full bg-secondary w-[45%]"></div>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="text-[10px] text-tertiary font-mono uppercase">Last Check</span>
+<span class="text-[11px] font-mono text-secondary">2m ago</span>
+</div>
+</div>
+</div>
+<!-- Mini Card 2 -->
+<div class="bg-surface border border-border rounded-lg p-3 flex flex-col gap-3 hover:border-l-2 hover:border-l-accent transition-all duration-150">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-status-running"></div>
+<span class="font-mono text-[13px] text-primary">paas-redis</span>
+</div>
+<span class="text-[11px] font-mono text-secondary border border-border px-1.5 py-0.5 rounded bg-background">5 envs</span>
+</div>
+<div class="flex items-center justify-between mt-1">
+<div class="flex flex-col gap-1 w-1/3">
+<span class="text-[10px] text-tertiary font-mono uppercase">CPU 4%</span>
+<div class="h-1 w-full bg-background rounded-full overflow-hidden">
+<div class="h-full bg-accent w-[4%]"></div>
+</div>
+</div>
+<div class="flex flex-col gap-1 w-1/3">
+<span class="text-[10px] text-tertiary font-mono uppercase">MEM 18%</span>
+<div class="h-1 w-full bg-background rounded-full overflow-hidden">
+<div class="h-full bg-secondary w-[18%]"></div>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="text-[10px] text-tertiary font-mono uppercase">Last Check</span>
+<span class="text-[11px] font-mono text-secondary">1m ago</span>
+</div>
+</div>
+</div>
+<!-- Mini Card 3 -->
+<div class="bg-surface border border-border rounded-lg p-3 flex flex-col gap-3 hover:border-l-2 hover:border-l-accent transition-all duration-150">
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-2">
+<div class="w-2 h-2 rounded-full bg-status-building"></div>
+<span class="font-mono text-[13px] text-primary">paas-rabbitmq</span>
+</div>
+<span class="text-[11px] font-mono text-secondary border border-border px-1.5 py-0.5 rounded bg-background">3 envs</span>
+</div>
+<div class="flex items-center justify-between mt-1">
+<div class="flex flex-col gap-1 w-1/3">
+<span class="text-[10px] text-tertiary font-mono uppercase">CPU 88%</span>
+<div class="h-1 w-full bg-background rounded-full overflow-hidden">
+<div class="h-full bg-status-building w-[88%]"></div>
+</div>
+</div>
+<div class="flex flex-col gap-1 w-1/3">
+<span class="text-[10px] text-tertiary font-mono uppercase">MEM 62%</span>
+<div class="h-1 w-full bg-background rounded-full overflow-hidden">
+<div class="h-full bg-secondary w-[62%]"></div>
+</div>
+</div>
+<div class="flex flex-col items-end">
+<span class="text-[10px] text-tertiary font-mono uppercase">Last Check</span>
+<span class="text-[11px] font-mono text-secondary">Just now</span>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Footer Shortcuts -->
+<div class="max-w-6xl mx-auto border-t border-border pt-4 mt-8 flex items-center justify-center gap-6">
+<div class="flex items-center gap-2 text-[11px] font-mono text-tertiary">
+<kbd class="bg-surface border border-border rounded px-1">⌘K</kbd> Search
+                </div>
+<div class="flex items-center gap-2 text-[11px] font-mono text-tertiary">
+<kbd class="bg-surface border border-border rounded px-1">G O</kbd> Overview
+                </div>
+<div class="flex items-center gap-2 text-[11px] font-mono text-tertiary">
+<kbd class="bg-surface border border-border rounded px-1">G P</kbd> Projects
+                </div>
+<div class="flex items-center gap-2 text-[11px] font-mono text-tertiary">
+<kbd class="bg-surface border border-border rounded px-1">G E</kbd> Environments
+                </div>
+</div>
+</main>
+</div>
+</body></html>

@@ -1,0 +1,453 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Service Detail - paas-postgres</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<style>
+        .font-headline { font-family: 'Geist', sans-serif; }
+        .font-body { font-family: 'Geist', sans-serif; }
+        .font-mono { font-family: 'Geist Mono', monospace; }
+        
+        /* Utility for sparklines */
+        .sparkline-container {
+            display: flex;
+            align-items: flex-end;
+            gap: 2px;
+            height: 24px;
+        }
+        .sparkbar {
+            width: 4px;
+            background-color: #10B981;
+            border-radius: 1px 1px 0 0;
+            opacity: 0.8;
+        }
+    </style>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {},
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    fontFamily: {
+                        "headline": ["Geist"],
+                        "display": ["Geist"],
+                        "body": ["Geist"],
+                        "label": ["Geist"]
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="bg-[#0A0A0A] text-[#FAFAFA] font-body min-h-screen flex selection:bg-[#10B981] selection:text-white">
+<!-- Left Rail -->
+<nav class="w-[220px] h-screen border-r border-[#1F1F1F] bg-[#0A0A0A] flex flex-col fixed left-0 top-0 py-4 z-50">
+<div class="px-6 mb-8 flex items-center gap-3">
+<div class="w-8 h-8 rounded-full bg-[#161616] flex items-center justify-center border border-[#1F1F1F]">
+<span class="material-symbols-outlined text-[#10B981] text-lg">dns</span>
+</div>
+<div>
+<div class="font-headline font-bold text-[#FAFAFA] tracking-tight text-sm">Env Manager</div>
+<div class="text-[#A1A1AA] text-[10px] uppercase tracking-wider">v2.4.0-pro</div>
+</div>
+</div>
+<div class="flex-1 overflow-y-auto font-body text-[13px] tracking-tight flex flex-col gap-1 px-3">
+<a class="text-[#A1A1AA] hover:bg-[#111111] hover:text-[#FAFAFA] px-3 py-2 rounded-md flex items-center gap-3 transition-colors duration-150 cursor-pointer ease-out" href="#">
+<span class="material-symbols-outlined text-[18px]">dashboard</span>
+                Overview
+            </a>
+<a class="text-[#A1A1AA] hover:bg-[#111111] hover:text-[#FAFAFA] px-3 py-2 rounded-md flex items-center gap-3 transition-colors duration-150 cursor-pointer ease-out" href="#">
+<span class="material-symbols-outlined text-[18px]">folder_open</span>
+                Projects
+            </a>
+<a class="text-[#A1A1AA] hover:bg-[#111111] hover:text-[#FAFAFA] px-3 py-2 rounded-md flex items-center gap-3 transition-colors duration-150 cursor-pointer ease-out" href="#">
+<span class="material-symbols-outlined text-[18px]">layers</span>
+                Environments
+            </a>
+<a class="border-l-2 border-[#10B981] bg-[#161616] text-[#FAFAFA] px-3 py-2 rounded-r-md flex items-center gap-3 transition-colors duration-150 cursor-pointer ease-out -ml-3 pl-[14px]" href="#">
+<span class="material-symbols-outlined text-[18px] text-[#10B981]">terminal</span>
+                Services
+            </a>
+<a class="text-[#A1A1AA] hover:bg-[#111111] hover:text-[#FAFAFA] px-3 py-2 rounded-md flex items-center gap-3 transition-colors duration-150 cursor-pointer ease-out" href="#">
+<span class="material-symbols-outlined text-[18px]">hub</span>
+                Network
+            </a>
+<a class="text-[#A1A1AA] hover:bg-[#111111] hover:text-[#FAFAFA] px-3 py-2 rounded-md flex items-center gap-3 transition-colors duration-150 cursor-pointer ease-out" href="#">
+<span class="material-symbols-outlined text-[18px]">construction</span>
+                Builds
+            </a>
+<div class="mt-auto pt-4 border-t border-[#1F1F1F]">
+<a class="text-[#A1A1AA] hover:bg-[#111111] hover:text-[#FAFAFA] px-3 py-2 rounded-md flex items-center gap-3 transition-colors duration-150 cursor-pointer ease-out" href="#">
+<span class="material-symbols-outlined text-[18px]">settings</span>
+                    Settings
+                </a>
+</div>
+</div>
+</nav>
+<!-- Main Content Area -->
+<main class="flex-1 ml-[220px] flex flex-col min-w-0">
+<!-- Top App Bar -->
+<header class="h-[52px] w-full border-b border-[#1F1F1F] bg-[#0A0A0A] flex items-center justify-between px-6 sticky top-0 z-40">
+<div class="flex items-center gap-2 font-body text-xs">
+<a class="text-[#52525B] hover:text-[#10B981] transition-colors duration-150" href="#">Home Lab</a>
+<span class="text-[#52525B]">/</span>
+<a class="text-[#52525B] hover:text-[#10B981] transition-colors duration-150" href="#">Services</a>
+<span class="text-[#52525B]">/</span>
+<span class="text-[#FAFAFA] font-medium">paas-postgres</span>
+</div>
+<div class="flex items-center gap-4">
+<div class="relative flex items-center">
+<span class="material-symbols-outlined absolute left-2 text-[#52525B] text-[18px]">search</span>
+<input class="bg-[#111111] border border-[#1F1F1F] text-[#FAFAFA] text-xs rounded pl-8 pr-8 py-1.5 focus:outline-none focus:border-[#52525B] transition-colors w-48 placeholder-[#52525B]" placeholder="Search..." type="text"/>
+<span class="absolute right-2 text-[#52525B] text-[10px] border border-[#1F1F1F] rounded px-1">⌘K</span>
+</div>
+<button class="text-[#A1A1AA] hover:text-[#FAFAFA] transition-colors flex items-center justify-center w-6 h-6">
+<span class="material-symbols-outlined text-[18px]">refresh</span>
+</button>
+<button class="w-6 h-6 rounded-full bg-[#1F1F1F] flex items-center justify-center overflow-hidden border border-[#27272A] hover:border-[#52525B] transition-colors">
+<span class="material-symbols-outlined text-[16px] text-[#A1A1AA]">account_circle</span>
+</button>
+</div>
+</header>
+<!-- Page Content -->
+<div class="p-6 flex flex-col gap-6 max-w-[1600px] w-full mx-auto">
+<!-- Page Header -->
+<div class="flex items-center justify-between">
+<div class="flex items-center gap-4">
+<h1 class="font-mono text-[32px] font-semibold tracking-tight text-[#FAFAFA] leading-none">paas-postgres</h1>
+<div class="flex items-center gap-2 mt-1">
+<span class="px-2 py-0.5 rounded-full border border-[#1F1F1F] bg-[#111111] text-[#A1A1AA] text-[11px] font-mono">postgres:16</span>
+<span class="px-2 py-0.5 rounded-full border border-[#10B981]/30 bg-[#10B981]/10 text-[#10B981] text-[11px] flex items-center gap-1.5 uppercase tracking-wide font-medium">
+<span class="w-1.5 h-1.5 rounded-full bg-[#10B981]"></span>
+                            Running
+                        </span>
+<span class="text-[#52525B] text-xs ml-2">up 14d 6h</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<button class="px-3 py-1.5 rounded-md border border-[#1F1F1F] bg-[#111111] hover:bg-[#161616] text-[#A1A1AA] hover:text-[#FAFAFA] text-xs font-medium transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">restart_alt</span>
+                        Restart
+                    </button>
+<button class="px-3 py-1.5 rounded-md border border-[#1F1F1F] bg-[#111111] hover:bg-[#161616] text-[#A1A1AA] hover:text-[#FAFAFA] text-xs font-medium transition-colors flex items-center gap-2">
+<span class="material-symbols-outlined text-[16px]">subject</span>
+                        Logs
+                    </button>
+<button class="px-4 py-1.5 rounded-md border border-[#10B981] bg-[#10B981]/10 hover:bg-[#10B981]/20 text-[#10B981] text-xs font-medium transition-colors flex items-center gap-2 ml-2">
+<span class="material-symbols-outlined text-[16px]">database</span>
+                        Connect
+                    </button>
+</div>
+</div>
+<!-- Metric Tiles (4 Columns) -->
+<div class="grid grid-cols-4 gap-4">
+<!-- Tile 1 -->
+<div class="bg-[#111111] border border-[#1F1F1F] rounded-lg p-4 hover:bg-[#161616] transition-colors flex flex-col justify-between group">
+<div class="text-[#A1A1AA] text-[11px] uppercase tracking-wide font-medium mb-2">Connections</div>
+<div class="flex items-end justify-between mt-1">
+<div class="font-mono text-[32px] font-medium leading-none text-[#FAFAFA]">8 <span class="text-[#52525B] text-[20px]">/ 100</span></div>
+<div class="sparkline-container">
+<div class="sparkbar h-[4px]"></div><div class="sparkbar h-[8px]"></div><div class="sparkbar h-[6px]"></div>
+<div class="sparkbar h-[12px]"></div><div class="sparkbar h-[16px]"></div><div class="sparkbar h-[10px]"></div>
+<div class="sparkbar h-[8px]"></div><div class="sparkbar h-[14px]"></div><div class="sparkbar h-[20px]"></div>
+<div class="sparkbar h-[24px]"></div><div class="sparkbar h-[18px]"></div><div class="sparkbar h-[12px]"></div>
+</div>
+</div>
+</div>
+<!-- Tile 2 -->
+<div class="bg-[#111111] border border-[#1F1F1F] rounded-lg p-4 hover:bg-[#161616] transition-colors flex flex-col justify-between group">
+<div class="text-[#A1A1AA] text-[11px] uppercase tracking-wide font-medium mb-2">Database Size</div>
+<div class="flex items-end justify-between mt-1">
+<div class="font-mono text-[32px] font-medium leading-none text-[#FAFAFA]">4.2 <span class="text-[#52525B] text-[20px]">GB</span></div>
+<div class="sparkline-container">
+<div class="sparkbar h-[8px]"></div><div class="sparkbar h-[8px]"></div><div class="sparkbar h-[10px]"></div>
+<div class="sparkbar h-[10px]"></div><div class="sparkbar h-[12px]"></div><div class="sparkbar h-[12px]"></div>
+<div class="sparkbar h-[14px]"></div><div class="sparkbar h-[16px]"></div><div class="sparkbar h-[18px]"></div>
+<div class="sparkbar h-[20px]"></div><div class="sparkbar h-[22px]"></div><div class="sparkbar h-[24px]"></div>
+</div>
+</div>
+</div>
+<!-- Tile 3 -->
+<div class="bg-[#111111] border border-[#1F1F1F] rounded-lg p-4 hover:bg-[#161616] transition-colors flex flex-col justify-between group">
+<div class="text-[#A1A1AA] text-[11px] uppercase tracking-wide font-medium mb-2">Queries/s</div>
+<div class="flex items-end justify-between mt-1">
+<div class="font-mono text-[32px] font-medium leading-none text-[#FAFAFA]">412</div>
+<div class="sparkline-container">
+<div class="sparkbar h-[12px]"></div><div class="sparkbar h-[18px]"></div><div class="sparkbar h-[14px]"></div>
+<div class="sparkbar h-[24px]"></div><div class="sparkbar h-[8px]"></div><div class="sparkbar h-[16px]"></div>
+<div class="sparkbar h-[22px]"></div><div class="sparkbar h-[10px]"></div><div class="sparkbar h-[20px]"></div>
+<div class="sparkbar h-[14px]"></div><div class="sparkbar h-[18px]"></div><div class="sparkbar h-[22px]"></div>
+</div>
+</div>
+</div>
+<!-- Tile 4 -->
+<div class="bg-[#111111] border border-[#1F1F1F] rounded-lg p-4 hover:bg-[#161616] transition-colors flex flex-col justify-between group">
+<div class="text-[#A1A1AA] text-[11px] uppercase tracking-wide font-medium mb-2">Cache Hit Ratio</div>
+<div class="flex items-end justify-between mt-1">
+<div class="font-mono text-[32px] font-medium leading-none text-[#FAFAFA]">98.7 <span class="text-[#52525B] text-[20px]">%</span></div>
+<div class="sparkline-container">
+<div class="sparkbar h-[22px]"></div><div class="sparkbar h-[24px]"></div><div class="sparkbar h-[23px]"></div>
+<div class="sparkbar h-[24px]"></div><div class="sparkbar h-[24px]"></div><div class="sparkbar h-[22px]"></div>
+<div class="sparkbar h-[21px]"></div><div class="sparkbar h-[24px]"></div><div class="sparkbar h-[24px]"></div>
+<div class="sparkbar h-[24px]"></div><div class="sparkbar h-[24px]"></div><div class="sparkbar h-[24px]"></div>
+</div>
+</div>
+</div>
+</div>
+<!-- 2-Column Layout -->
+<div class="grid grid-cols-[60%_1fr] gap-6">
+<!-- Left Column (60%) - Consumers -->
+<div class="bg-[#111111] border border-[#1F1F1F] rounded-lg overflow-hidden flex flex-col">
+<div class="px-4 py-3 border-b border-[#1F1F1F] flex justify-between items-center bg-[#0A0A0A]/50">
+<h2 class="text-[#FAFAFA] font-medium text-sm">Consumers (8)</h2>
+<button class="text-[#52525B] hover:text-[#FAFAFA] transition-colors">
+<span class="material-symbols-outlined text-[16px]">filter_list</span>
+</button>
+</div>
+<div class="flex-1 overflow-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr>
+<th class="px-4 py-2 border-b border-[#1F1F1F] text-[#52525B] text-[11px] uppercase tracking-wider font-medium w-[40%]">Environment</th>
+<th class="px-4 py-2 border-b border-[#1F1F1F] text-[#52525B] text-[11px] uppercase tracking-wider font-medium">Status</th>
+<th class="px-4 py-2 border-b border-[#1F1F1F] text-[#52525B] text-[11px] uppercase tracking-wider font-medium text-right">Conns</th>
+<th class="px-4 py-2 border-b border-[#1F1F1F] text-[#52525B] text-[11px] uppercase tracking-wider font-medium text-right">Last Query</th>
+<th class="px-4 py-2 border-b border-[#1F1F1F] text-[#52525B] text-[11px] uppercase tracking-wider font-medium w-[80px]"></th>
+</tr>
+</thead>
+<tbody class="text-xs">
+<!-- Row 1 -->
+<tr class="border-b border-[#1F1F1F] hover:bg-[#161616] group transition-colors">
+<td class="px-4 py-3">
+<div class="font-mono text-[#FAFAFA]">stripe-payments/main</div>
+<div class="text-[#52525B] text-[10px] mt-0.5">Project: Payments</div>
+</td>
+<td class="px-4 py-3">
+<div class="flex items-center gap-1.5">
+<div class="w-2 h-2 rounded-full bg-[#10B981]"></div>
+<span class="text-[#A1A1AA]">Active</span>
+</div>
+</td>
+<td class="px-4 py-3 text-right font-mono text-[#A1A1AA]">4</td>
+<td class="px-4 py-3 text-right text-[#52525B]">2s ago</td>
+<td class="px-4 py-3">
+<div class="sparkline-container h-[16px] justify-end opacity-50 group-hover:opacity-100 transition-opacity">
+<div class="sparkbar h-[4px]"></div><div class="sparkbar h-[12px]"></div><div class="sparkbar h-[8px]"></div><div class="sparkbar h-[16px]"></div><div class="sparkbar h-[10px]"></div>
+</div>
+</td>
+</tr>
+<!-- Row 2 -->
+<tr class="border-b border-[#1F1F1F] hover:bg-[#161616] group transition-colors">
+<td class="px-4 py-3">
+<div class="font-mono text-[#FAFAFA]">stripe-payments/develop</div>
+<div class="text-[#52525B] text-[10px] mt-0.5">Project: Payments</div>
+</td>
+<td class="px-4 py-3">
+<div class="flex items-center gap-1.5">
+<div class="w-2 h-2 rounded-full bg-[#10B981]"></div>
+<span class="text-[#A1A1AA]">Active</span>
+</div>
+</td>
+<td class="px-4 py-3 text-right font-mono text-[#A1A1AA]">1</td>
+<td class="px-4 py-3 text-right text-[#52525B]">1m ago</td>
+<td class="px-4 py-3">
+<div class="sparkline-container h-[16px] justify-end opacity-50 group-hover:opacity-100 transition-opacity">
+<div class="sparkbar h-[2px]"></div><div class="sparkbar h-[4px]"></div><div class="sparkbar h-[2px]"></div><div class="sparkbar h-[8px]"></div><div class="sparkbar h-[4px]"></div>
+</div>
+</td>
+</tr>
+<!-- Row 3 -->
+<tr class="border-b border-[#1F1F1F] hover:bg-[#161616] group transition-colors">
+<td class="px-4 py-3">
+<div class="font-mono text-[#FAFAFA]">blocksweb-homepage/main</div>
+<div class="text-[#52525B] text-[10px] mt-0.5">Project: Web</div>
+</td>
+<td class="px-4 py-3">
+<div class="flex items-center gap-1.5">
+<div class="w-2 h-2 rounded-full bg-[#10B981]"></div>
+<span class="text-[#A1A1AA]">Active</span>
+</div>
+</td>
+<td class="px-4 py-3 text-right font-mono text-[#A1A1AA]">2</td>
+<td class="px-4 py-3 text-right text-[#52525B]">12s ago</td>
+<td class="px-4 py-3">
+<div class="sparkline-container h-[16px] justify-end opacity-50 group-hover:opacity-100 transition-opacity">
+<div class="sparkbar h-[8px]"></div><div class="sparkbar h-[6px]"></div><div class="sparkbar h-[12px]"></div><div class="sparkbar h-[8px]"></div><div class="sparkbar h-[10px]"></div>
+</div>
+</td>
+</tr>
+<!-- Row 4 -->
+<tr class="border-b border-[#1F1F1F] hover:bg-[#161616] group transition-colors">
+<td class="px-4 py-3">
+<div class="font-mono text-[#FAFAFA]">user-auth-service/prod</div>
+<div class="text-[#52525B] text-[10px] mt-0.5">Project: Core</div>
+</td>
+<td class="px-4 py-3">
+<div class="flex items-center gap-1.5">
+<div class="w-2 h-2 rounded-full bg-[#71717A]"></div>
+<span class="text-[#A1A1AA]">Idle</span>
+</div>
+</td>
+<td class="px-4 py-3 text-right font-mono text-[#A1A1AA]">1</td>
+<td class="px-4 py-3 text-right text-[#52525B]">4h ago</td>
+<td class="px-4 py-3">
+<div class="sparkline-container h-[16px] justify-end opacity-50 group-hover:opacity-100 transition-opacity">
+<div class="sparkbar h-[2px]"></div><div class="sparkbar h-[2px]"></div><div class="sparkbar h-[2px]"></div><div class="sparkbar h-[2px]"></div><div class="sparkbar h-[2px]"></div>
+</div>
+</td>
+</tr>
+<!-- Row 5 -->
+<tr class="hover:bg-[#161616] group transition-colors">
+<td class="px-4 py-3 text-[#52525B] italic" colspan="5">
+                                        + 4 other inactive consumers...
+                                    </td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+<!-- Right Column (40%) - Stacked Panels -->
+<div class="flex flex-col gap-6">
+<!-- Configuration Panel -->
+<div class="bg-[#111111] border border-[#1F1F1F] rounded-lg">
+<div class="px-4 py-3 border-b border-[#1F1F1F] bg-[#0A0A0A]/50">
+<h2 class="text-[#FAFAFA] font-medium text-sm">Configuration</h2>
+</div>
+<div class="p-4 grid grid-cols-2 gap-y-4 gap-x-6 text-xs">
+<div>
+<div class="text-[#52525B] mb-1">Host</div>
+<div class="font-mono text-[#A1A1AA]">paas-postgres.internal</div>
+</div>
+<div>
+<div class="text-[#52525B] mb-1">Port</div>
+<div class="font-mono text-[#A1A1AA]">5432</div>
+</div>
+<div>
+<div class="text-[#52525B] mb-1">Version</div>
+<div class="font-mono text-[#A1A1AA]">16.2-alpine</div>
+</div>
+<div>
+<div class="text-[#52525B] mb-1">Max Connections</div>
+<div class="font-mono text-[#A1A1AA]">100</div>
+</div>
+</div>
+</div>
+<!-- Network Panel -->
+<div class="bg-[#111111] border border-[#1F1F1F] rounded-lg">
+<div class="px-4 py-3 border-b border-[#1F1F1F] bg-[#0A0A0A]/50">
+<h2 class="text-[#FAFAFA] font-medium text-sm">Network</h2>
+</div>
+<div class="p-4 text-xs">
+<div class="flex items-center justify-between py-2 border-b border-[#1F1F1F]">
+<div class="text-[#52525B]">Docker Network</div>
+<div class="font-mono text-[#A1A1AA] bg-[#161616] px-2 py-0.5 rounded border border-[#1F1F1F]">paas-bridge-01</div>
+</div>
+<div class="flex items-center justify-between py-2 border-b border-[#1F1F1F]">
+<div class="text-[#52525B]">Internal IP</div>
+<div class="font-mono text-[#A1A1AA]">172.18.0.14</div>
+</div>
+<div class="flex items-center justify-between py-2">
+<div class="text-[#52525B]">Exposed Ports</div>
+<div class="font-mono text-[#A1A1AA]">None</div>
+</div>
+</div>
+</div>
+<!-- Backups Panel -->
+<div class="bg-[#111111] border border-[#1F1F1F] rounded-lg overflow-hidden flex flex-col flex-1">
+<div class="px-4 py-3 border-b border-[#1F1F1F] bg-[#0A0A0A]/50 flex justify-between items-center">
+<h2 class="text-[#FAFAFA] font-medium text-sm">Recent Backups</h2>
+<button class="text-[#10B981] hover:text-[#FAFAFA] text-xs font-medium transition-colors">Create Now</button>
+</div>
+<div class="flex-1 overflow-auto">
+<table class="w-full text-left border-collapse text-xs">
+<tbody>
+<tr class="border-b border-[#1F1F1F] hover:bg-[#161616] transition-colors">
+<td class="px-4 py-2.5 font-mono text-[#A1A1AA]">2023-10-24 00:00 UTC</td>
+<td class="px-4 py-2.5 text-right font-mono text-[#52525B]">4.1 GB</td>
+<td class="px-4 py-2.5 text-right w-[60px]">
+<button class="text-[#52525B] hover:text-[#FAFAFA] transition-colors" title="Restore">
+<span class="material-symbols-outlined text-[16px]">settings_backup_restore</span>
+</button>
+</td>
+</tr>
+<tr class="border-b border-[#1F1F1F] hover:bg-[#161616] transition-colors">
+<td class="px-4 py-2.5 font-mono text-[#A1A1AA]">2023-10-23 00:00 UTC</td>
+<td class="px-4 py-2.5 text-right font-mono text-[#52525B]">4.0 GB</td>
+<td class="px-4 py-2.5 text-right">
+<button class="text-[#52525B] hover:text-[#FAFAFA] transition-colors" title="Restore">
+<span class="material-symbols-outlined text-[16px]">settings_backup_restore</span>
+</button>
+</td>
+</tr>
+<tr class="hover:bg-[#161616] transition-colors">
+<td class="px-4 py-2.5 font-mono text-[#A1A1AA]">2023-10-22 00:00 UTC</td>
+<td class="px-4 py-2.5 text-right font-mono text-[#52525B]">3.9 GB</td>
+<td class="px-4 py-2.5 text-right">
+<button class="text-[#52525B] hover:text-[#FAFAFA] transition-colors" title="Restore">
+<span class="material-symbols-outlined text-[16px]">settings_backup_restore</span>
+</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</div>
+<!-- Full-width Bottom Section - Slow Queries -->
+<div class="bg-[#111111] border border-[#1F1F1F] rounded-lg mt-2 overflow-hidden">
+<div class="px-4 py-3 border-b border-[#1F1F1F] bg-[#0A0A0A]/50 flex justify-between items-center">
+<h2 class="text-[#FAFAFA] font-medium text-sm">Recent Slow Queries</h2>
+<div class="text-[#52525B] text-xs">Showing queries &gt; 100ms</div>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse whitespace-nowrap">
+<thead>
+<tr>
+<th class="px-4 py-2 border-b border-[#1F1F1F] text-[#52525B] text-[11px] uppercase tracking-wider font-medium max-w-[400px]">Query</th>
+<th class="px-4 py-2 border-b border-[#1F1F1F] text-[#52525B] text-[11px] uppercase tracking-wider font-medium">Environment</th>
+<th class="px-4 py-2 border-b border-[#1F1F1F] text-[#52525B] text-[11px] uppercase tracking-wider font-medium text-right">Count</th>
+<th class="px-4 py-2 border-b border-[#1F1F1F] text-[#52525B] text-[11px] uppercase tracking-wider font-medium text-right">Avg Duration</th>
+<th class="px-4 py-2 border-b border-[#1F1F1F] text-[#52525B] text-[11px] uppercase tracking-wider font-medium text-right">Last Seen</th>
+</tr>
+</thead>
+<tbody class="text-xs">
+<tr class="border-b border-[#1F1F1F] hover:bg-[#161616] transition-colors font-mono">
+<td class="px-4 py-3 text-[#A1A1AA] truncate max-w-[400px] overflow-hidden text-ellipsis">SELECT * FROM transactions WHERE user_id = $1 AND status = 'pending' ORDER BY created_at DESC LIMIT 50</td>
+<td class="px-4 py-3 text-[#52525B]">stripe-payments/main</td>
+<td class="px-4 py-3 text-right text-[#A1A1AA]">1,240</td>
+<td class="px-4 py-3 text-right text-[#F59E0B]">412ms</td>
+<td class="px-4 py-3 text-right text-[#52525B]">2m ago</td>
+</tr>
+<tr class="border-b border-[#1F1F1F] hover:bg-[#161616] transition-colors font-mono">
+<td class="px-4 py-3 text-[#A1A1AA] truncate max-w-[400px] overflow-hidden text-ellipsis">UPDATE users SET last_login = NOW() WHERE id = $1 RETURNING *</td>
+<td class="px-4 py-3 text-[#52525B]">user-auth-service/prod</td>
+<td class="px-4 py-3 text-right text-[#A1A1AA]">48</td>
+<td class="px-4 py-3 text-right text-[#F59E0B]">156ms</td>
+<td class="px-4 py-3 text-right text-[#52525B]">1h ago</td>
+</tr>
+<tr class="border-b border-[#1F1F1F] hover:bg-[#161616] transition-colors font-mono">
+<td class="px-4 py-3 text-[#A1A1AA] truncate max-w-[400px] overflow-hidden text-ellipsis">SELECT count(*) FROM events WHERE type = 'page_view' AND created_at &gt; NOW() - INTERVAL '24 hours'</td>
+<td class="px-4 py-3 text-[#52525B]">blocksweb-homepage/main</td>
+<td class="px-4 py-3 text-right text-[#A1A1AA]">12</td>
+<td class="px-4 py-3 text-right text-[#EF4444]">1,204ms</td>
+<td class="px-4 py-3 text-right text-[#52525B]">4h ago</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</div>
+</main>
+</body></html>

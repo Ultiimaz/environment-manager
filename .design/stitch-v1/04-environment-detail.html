@@ -1,0 +1,411 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Env Manager - stripe-payments / main</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Geist:wght@300;400;500;600;700&amp;family=Geist+Mono:wght@400;500;600&amp;family=Space+Mono&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {},
+                    borderRadius: {
+                        "DEFAULT": "0.25rem",
+                        "lg": "0.5rem",
+                        "xl": "0.75rem",
+                        "full": "9999px"
+                    },
+                    fontFamily: {
+                        headline: ["Geist", "sans-serif"],
+                        display: ["Geist", "sans-serif"],
+                        body: ["Geist", "sans-serif"],
+                        label: ["Geist", "sans-serif"],
+                        mono: ["Geist Mono", "Space Mono", "monospace"]
+                    }
+                }
+            }
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        /* Custom scrollbar for log viewer */
+        .log-scroll::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        .log-scroll::-webkit-scrollbar-track {
+            background: #0A0A0A; 
+        }
+        .log-scroll::-webkit-scrollbar-thumb {
+            background: #1F1F1F; 
+            border-radius: 4px;
+        }
+        .log-scroll::-webkit-scrollbar-thumb:hover {
+            background: #52525B; 
+        }
+    </style>
+</head>
+<body class="bg-[#0A0A0A] text-[#FAFAFA] font-body min-h-screen antialiased flex">
+<!-- SideNavBar -->
+<nav class="w-[220px] h-screen border-r border-[#1F1F1F] flex flex-col fixed left-0 top-0 py-4 bg-[#0A0A0A] z-50">
+<div class="px-6 mb-8">
+<div class="flex items-center gap-3">
+<div class="w-8 h-8 rounded bg-[#111111] border border-[#1F1F1F] flex items-center justify-center shrink-0">
+<span class="material-symbols-outlined text-[#FAFAFA]" style="font-variation-settings: 'FILL' 1;">cloud</span>
+</div>
+<div>
+<h1 class="font-headline font-bold text-[#FAFAFA] tracking-tight text-sm">Env Manager</h1>
+<p class="text-[11px] text-[#A1A1AA] font-mono">v2.4.0-pro</p>
+</div>
+</div>
+</div>
+<div class="flex-1 flex flex-col gap-1 px-3">
+<a class="flex items-center gap-3 px-3 py-2 rounded-md font-body text-[13px] tracking-tight text-[#A1A1AA] hover:bg-[#111111] hover:text-[#FAFAFA] cursor-pointer transition-all duration-150 ease-out group" href="#">
+<span class="material-symbols-outlined text-[18px] text-[#52525B] group-hover:text-[#FAFAFA]">dashboard</span>
+                Overview
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-md font-body text-[13px] tracking-tight text-[#A1A1AA] hover:bg-[#111111] hover:text-[#FAFAFA] cursor-pointer transition-all duration-150 ease-out group" href="#">
+<span class="material-symbols-outlined text-[18px] text-[#52525B] group-hover:text-[#FAFAFA]">folder_open</span>
+                Projects
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-md font-body text-[13px] tracking-tight border-l-2 border-[#10B981] bg-[#161616] text-[#FAFAFA] cursor-pointer transition-all duration-150 ease-out" href="#">
+<span class="material-symbols-outlined text-[18px] text-[#10B981]">layers</span>
+                Environments
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-md font-body text-[13px] tracking-tight text-[#A1A1AA] hover:bg-[#111111] hover:text-[#FAFAFA] cursor-pointer transition-all duration-150 ease-out group" href="#">
+<span class="material-symbols-outlined text-[18px] text-[#52525B] group-hover:text-[#FAFAFA]">terminal</span>
+                Services
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-md font-body text-[13px] tracking-tight text-[#A1A1AA] hover:bg-[#111111] hover:text-[#FAFAFA] cursor-pointer transition-all duration-150 ease-out group" href="#">
+<span class="material-symbols-outlined text-[18px] text-[#52525B] group-hover:text-[#FAFAFA]">hub</span>
+                Network
+            </a>
+<a class="flex items-center gap-3 px-3 py-2 rounded-md font-body text-[13px] tracking-tight text-[#A1A1AA] hover:bg-[#111111] hover:text-[#FAFAFA] cursor-pointer transition-all duration-150 ease-out group" href="#">
+<span class="material-symbols-outlined text-[18px] text-[#52525B] group-hover:text-[#FAFAFA]">construction</span>
+                Builds
+            </a>
+</div>
+<div class="mt-auto px-3">
+<a class="flex items-center gap-3 px-3 py-2 rounded-md font-body text-[13px] tracking-tight text-[#A1A1AA] hover:bg-[#111111] hover:text-[#FAFAFA] cursor-pointer transition-all duration-150 ease-out group" href="#">
+<span class="material-symbols-outlined text-[18px] text-[#52525B] group-hover:text-[#FAFAFA]">settings</span>
+                Settings
+            </a>
+</div>
+</nav>
+<!-- Main Workspace -->
+<div class="flex-1 ml-[220px] flex flex-col min-h-screen">
+<!-- TopAppBar -->
+<header class="h-[52px] w-full border-b border-[#1F1F1F] bg-[#0A0A0A] flex items-center justify-between px-6 sticky top-0 z-40">
+<div class="flex items-center gap-2 text-xs font-mono text-[#52525B]">
+<a class="hover:text-[#10B981] transition-colors duration-150" href="#">Home Lab</a>
+<span>/</span>
+<a class="hover:text-[#10B981] transition-colors duration-150" href="#">Projects</a>
+<span>/</span>
+<a class="hover:text-[#10B981] transition-colors duration-150" href="#">stripe-payments</a>
+<span>/</span>
+<span class="text-[#FAFAFA] font-medium">main</span>
+</div>
+<div class="flex items-center gap-4 text-[#A1A1AA]">
+<div class="relative group hidden md:block">
+<span class="material-symbols-outlined absolute left-2 top-1/2 -translate-y-1/2 text-[16px] text-[#52525B]">search</span>
+<input class="bg-[#111111] border border-[#1F1F1F] rounded h-7 pl-8 pr-12 text-xs text-[#FAFAFA] placeholder-[#52525B] focus:border-[#52525B] focus:ring-0 w-48 transition-colors" placeholder="Search..." type="text"/>
+<span class="absolute right-2 top-1/2 -translate-y-1/2 text-[10px] font-mono text-[#52525B] border border-[#1F1F1F] rounded px-1 group-focus-within:hidden">⌘K</span>
+</div>
+<button class="hover:text-[#FAFAFA] transition-colors h-7 w-7 flex items-center justify-center rounded hover:bg-[#111111]">
+<span class="material-symbols-outlined text-[18px]">refresh</span>
+</button>
+<div class="w-7 h-7 rounded-full bg-[#111111] border border-[#1F1F1F] overflow-hidden cursor-pointer hover:border-[#52525B] transition-colors">
+<img alt="User Avatar" class="w-full h-full object-cover" data-alt="Close up portrait photo of a professional software engineer or system administrator in their late 20s. They are in a dimly lit server room or technical home lab setting. The lighting is cool, with subtle blue and green LED glows reflecting on their face, fitting a dark mode technical aesthetic." src="https://lh3.googleusercontent.com/aida-public/AB6AXuD_iWz99Qr5VX8pIJa7sq4rmMglclkwMViivytbu9m_rAczRbzUOP2QVmqgrOuRyeMN9y5f0kY4pe3SG65qZEGXA25VpCqYEgS9QO67Ezmr1TSLtmQNl4AfcV3Z641p1AJrZyX3vWCCdgc5KHPWaAu256ZCsw_szvwYGbvGuy-nfpCD23TGJpjD10iz3wJS5e9swYPomcUnUVyRkJ8eYZmekXiZZt3Lwu0xeWPIixwaG8wiAyJ01j6Bv_MTQAdIeDcCn50JRL4hEO8"/>
+</div>
+</div>
+</header>
+<!-- Page Content -->
+<main class="flex-1 p-6 flex flex-col gap-6 overflow-x-hidden">
+<!-- Page Header -->
+<div class="flex items-start justify-between">
+<div class="flex flex-col gap-2">
+<div class="flex items-center gap-3">
+<h2 class="font-headline text-[32px] font-semibold tracking-tight text-[#FAFAFA] leading-none">main</h2>
+<div class="flex items-center gap-2 h-6 mt-1">
+<span class="px-2 py-0.5 rounded-full border border-[#1F1F1F] bg-[#111111] text-[11px] font-mono text-[#A1A1AA] uppercase tracking-wide">prod</span>
+<span class="px-2 py-0.5 rounded-full border border-[#10B981]/30 bg-[#10B981]/10 text-[11px] font-mono text-[#10B981] flex items-center gap-1.5 uppercase tracking-wide">
+<span class="w-1.5 h-1.5 rounded-full bg-[#10B981] animate-pulse"></span>
+                                running
+                            </span>
+</div>
+</div>
+<div class="flex items-center gap-2 text-sm">
+<a class="text-[#A1A1AA] hover:text-[#FAFAFA] font-mono transition-colors flex items-center gap-1" href="#">
+                            stripe-payments.home
+                            <span class="material-symbols-outlined text-[14px]">open_in_new</span>
+</a>
+<span class="text-[#52525B] text-xs px-1">•</span>
+<span class="text-[#52525B] font-mono text-xs">ID: env_prd_8f92k1</span>
+</div>
+</div>
+<button class="bg-[#10B981] hover:bg-[#059669] text-[#0A0A0A] font-medium text-sm px-4 py-1.5 rounded-md transition-colors flex items-center gap-2 h-8">
+<span class="material-symbols-outlined text-[18px]">play_arrow</span>
+                    Build
+                </button>
+</div>
+<!-- Two Column Layout -->
+<div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+<!-- Left Column (Logs) -->
+<div class="lg:col-span-7 xl:col-span-8 flex flex-col min-h-[500px]">
+<div class="bg-[#111111] border border-[#1F1F1F] rounded-lg flex flex-col h-full overflow-hidden hover:border-[#52525B]/50 transition-colors">
+<!-- Log Header -->
+<div class="h-10 border-b border-[#1F1F1F] flex items-center justify-between px-4 shrink-0 bg-[#0A0A0A]/50">
+<div class="flex items-center gap-2">
+<span class="text-xs font-semibold text-[#FAFAFA] tracking-wide uppercase">Live runtime logs</span>
+<span class="flex items-center gap-1.5 text-[10px] font-mono text-[#10B981] bg-[#10B981]/10 px-1.5 py-0.5 rounded border border-[#10B981]/20 ml-2">
+<span class="w-1.5 h-1.5 rounded-full bg-[#10B981]"></span> ws · open
+                                </span>
+</div>
+<div class="flex items-center gap-1">
+<button class="h-6 px-2 rounded hover:bg-[#1F1F1F] text-[#A1A1AA] hover:text-[#FAFAFA] transition-colors flex items-center gap-1 text-[11px] font-mono">
+<span class="material-symbols-outlined text-[14px]">content_copy</span>
+</button>
+<button class="h-6 px-2 rounded hover:bg-[#1F1F1F] text-[#A1A1AA] hover:text-[#FAFAFA] transition-colors flex items-center gap-1 text-[11px] font-mono">
+<span class="material-symbols-outlined text-[14px]">open_in_full</span>
+</button>
+<button class="h-6 px-2 rounded bg-[#1F1F1F] text-[#FAFAFA] transition-colors flex items-center gap-1 text-[11px] font-mono ml-1">
+<span class="w-1.5 h-1.5 rounded-full bg-[#10B981]"></span> Follow
+                                </button>
+</div>
+</div>
+<!-- Log Viewer -->
+<div class="flex-1 bg-[#0A0A0A] font-mono text-[12px] leading-relaxed p-4 overflow-auto log-scroll">
+<div class="flex hover:bg-[#111111] -mx-4 px-4 py-0.5">
+<div class="text-[#52525B] w-8 shrink-0 text-right pr-2 select-none">1</div>
+<div class="text-[#52525B] w-[100px] shrink-0">10:42:01.031</div>
+<div class="text-[#A1A1AA] w-[60px] shrink-0">[INFO]</div>
+<div class="text-[#FAFAFA] flex-1 break-all">GET / 200 <span class="text-[#52525B]">(12ms)</span></div>
+</div>
+<div class="flex hover:bg-[#111111] -mx-4 px-4 py-0.5">
+<div class="text-[#52525B] w-8 shrink-0 text-right pr-2 select-none">2</div>
+<div class="text-[#52525B] w-[100px] shrink-0">10:42:02.100</div>
+<div class="text-[#A1A1AA] w-[60px] shrink-0">[INFO]</div>
+<div class="text-[#FAFAFA] flex-1 break-all">GET /health 200 <span class="text-[#52525B]">(2ms)</span></div>
+</div>
+<div class="flex hover:bg-[#111111] -mx-4 px-4 py-0.5">
+<div class="text-[#52525B] w-8 shrink-0 text-right pr-2 select-none">3</div>
+<div class="text-[#52525B] w-[100px] shrink-0">10:42:05.112</div>
+<div class="text-[#A1A1AA] w-[60px] shrink-0">[INFO]</div>
+<div class="text-[#FAFAFA] flex-1 break-all">POST /webhook 201 <span class="text-[#52525B]">(45ms)</span></div>
+</div>
+<div class="flex hover:bg-[#111111] -mx-4 px-4 py-0.5 border-l-2 border-[#EF4444] bg-[#EF4444]/5">
+<div class="text-[#52525B] w-[30px] shrink-0 text-right pr-2 select-none">4</div>
+<div class="text-[#52525B] w-[100px] shrink-0">10:42:15.901</div>
+<div class="text-[#EF4444] w-[60px] shrink-0">[ERROR]</div>
+<div class="text-[#EF4444] flex-1 break-all font-medium">Stripe webhook signature mismatch</div>
+</div>
+<div class="flex hover:bg-[#111111] -mx-4 px-4 py-0.5 border-l-2 border-[#EF4444] bg-[#EF4444]/5">
+<div class="text-[#52525B] w-[30px] shrink-0 text-right pr-2 select-none">5</div>
+<div class="text-[#52525B] w-[100px] shrink-0">10:42:15.903</div>
+<div class="text-[#EF4444] w-[60px] shrink-0"></div>
+<div class="text-[#EF4444]/80 flex-1 break-all text-[11px] ml-4">Error: No signatures found matching the expected signature for payload. Are you passing the raw request body you received from Stripe?<br/>    at Webhook.constructEvent (/app/node_modules/stripe/lib/Webhook.js:33:15)<br/>    at /app/src/controllers/webhooks.ts:42:29</div>
+</div>
+<div class="flex hover:bg-[#111111] -mx-4 px-4 py-0.5">
+<div class="text-[#52525B] w-8 shrink-0 text-right pr-2 select-none">6</div>
+<div class="text-[#52525B] w-[100px] shrink-0">10:42:20.001</div>
+<div class="text-[#A1A1AA] w-[60px] shrink-0">[INFO]</div>
+<div class="text-[#FAFAFA] flex-1 break-all">GET / 200 <span class="text-[#52525B]">(14ms)</span></div>
+</div>
+<div class="flex hover:bg-[#111111] -mx-4 px-4 py-0.5 border-l-2 border-[#F59E0B] bg-[#F59E0B]/5">
+<div class="text-[#52525B] w-[30px] shrink-0 text-right pr-2 select-none">7</div>
+<div class="text-[#52525B] w-[100px] shrink-0">10:43:01.220</div>
+<div class="text-[#F59E0B] w-[60px] shrink-0">[WARN]</div>
+<div class="text-[#F59E0B] flex-1 break-all">Rate limit approaching for endpoint /api/v1/charges (85% consumed)</div>
+</div>
+<div class="flex hover:bg-[#111111] -mx-4 px-4 py-0.5">
+<div class="text-[#52525B] w-8 shrink-0 text-right pr-2 select-none">8</div>
+<div class="text-[#52525B] w-[100px] shrink-0">10:43:05.112</div>
+<div class="text-[#A1A1AA] w-[60px] shrink-0">[INFO]</div>
+<div class="text-[#FAFAFA] flex-1 break-all">POST /webhook 201 <span class="text-[#52525B]">(42ms)</span></div>
+</div>
+</div>
+</div>
+</div>
+<!-- Right Column (Details) -->
+<div class="lg:col-span-5 xl:col-span-4 flex flex-col gap-6">
+<!-- Resource Usage -->
+<div class="bg-[#111111] border border-[#1F1F1F] rounded-lg hover:bg-[#161616] transition-colors duration-150 p-4">
+<div class="flex items-center justify-between mb-4">
+<h3 class="text-[11px] font-semibold text-[#FAFAFA] tracking-wide uppercase">Resource Usage</h3>
+<span class="text-[10px] text-[#52525B] font-mono">LAST 30M</span>
+</div>
+<div class="space-y-4">
+<!-- CPU -->
+<div>
+<div class="flex justify-between items-end mb-1">
+<span class="text-xs text-[#A1A1AA]">CPU</span>
+<span class="font-mono text-sm text-[#FAFAFA]">14%</span>
+</div>
+<div class="h-8 w-full border-b border-[#1F1F1F] relative flex items-end">
+<!-- Sparkline mock -->
+<svg class="w-full h-full stroke-[#10B981] fill-none" preserveaspectratio="none" stroke-width="1.5" viewbox="0 0 100 20">
+<path d="M0,15 L10,12 L20,18 L30,5 L40,15 L50,14 L60,18 L70,10 L80,16 L90,8 L100,12"></path>
+</svg>
+</div>
+</div>
+<!-- Memory -->
+<div>
+<div class="flex justify-between items-end mb-1">
+<span class="text-xs text-[#A1A1AA]">Memory</span>
+<span class="font-mono text-sm text-[#FAFAFA]">412 MB</span>
+</div>
+<div class="h-8 w-full border-b border-[#1F1F1F] relative flex items-end">
+<!-- Sparkline mock -->
+<svg class="w-full h-full stroke-[#10B981] fill-none" preserveaspectratio="none" stroke-width="1.5" viewbox="0 0 100 20">
+<path d="M0,10 L20,11 L40,10 L60,12 L80,9 L100,10"></path>
+</svg>
+</div>
+</div>
+<!-- Network -->
+<div>
+<div class="flex justify-between items-end mb-1">
+<span class="text-xs text-[#A1A1AA]">Network Out</span>
+<span class="font-mono text-sm text-[#FAFAFA]">1.2 GB</span>
+</div>
+<div class="h-8 w-full border-b border-[#1F1F1F] relative flex items-end">
+<!-- Sparkline mock -->
+<svg class="w-full h-full stroke-[#10B981] fill-none" preserveaspectratio="none" stroke-width="1.5" viewbox="0 0 100 20">
+<path d="M0,18 L10,18 L20,5 L25,18 L50,18 L60,2 L65,18 L100,18"></path>
+</svg>
+</div>
+</div>
+</div>
+</div>
+<!-- Configuration -->
+<div class="bg-[#111111] border border-[#1F1F1F] rounded-lg hover:bg-[#161616] transition-colors duration-150 p-4">
+<div class="flex items-center justify-between mb-4">
+<h3 class="text-[11px] font-semibold text-[#FAFAFA] tracking-wide uppercase">Configuration</h3>
+<button class="text-[10px] text-[#A1A1AA] hover:text-[#FAFAFA] font-mono">EDIT</button>
+</div>
+<div class="space-y-0 text-sm">
+<div class="flex justify-between py-2 border-b border-[#1F1F1F] group">
+<span class="font-mono text-[#A1A1AA] text-xs">NODE_ENV</span>
+<span class="font-mono text-[#FAFAFA] text-xs">production</span>
+</div>
+<div class="flex justify-between py-2 border-b border-[#1F1F1F] group">
+<span class="font-mono text-[#A1A1AA] text-xs">DATABASE_URL</span>
+<div class="flex items-center gap-2">
+<span class="font-mono text-[#FAFAFA] text-xs">postgres://***</span>
+<span class="material-symbols-outlined text-[14px] text-[#52525B] opacity-0 group-hover:opacity-100 cursor-pointer hover:text-[#FAFAFA]">visibility</span>
+</div>
+</div>
+<div class="flex justify-between py-2 border-b border-[#1F1F1F] group">
+<span class="font-mono text-[#A1A1AA] text-xs">STRIPE_KEY</span>
+<div class="flex items-center gap-2">
+<span class="font-mono text-[#FAFAFA] text-xs">sk_live_***</span>
+<span class="material-symbols-outlined text-[14px] text-[#52525B] opacity-0 group-hover:opacity-100 cursor-pointer hover:text-[#FAFAFA]">visibility</span>
+</div>
+</div>
+<div class="flex justify-between py-2 group">
+<span class="font-mono text-[#A1A1AA] text-xs">WEBHOOK_SECRET</span>
+<div class="flex items-center gap-2">
+<span class="font-mono text-[#FAFAFA] text-xs">whsec_***</span>
+<span class="material-symbols-outlined text-[14px] text-[#52525B] opacity-0 group-hover:opacity-100 cursor-pointer hover:text-[#FAFAFA]">visibility</span>
+</div>
+</div>
+</div>
+</div>
+<!-- Build Info -->
+<div class="bg-[#111111] border border-[#1F1F1F] rounded-lg hover:bg-[#161616] transition-colors duration-150 p-4">
+<div class="flex items-center justify-between mb-4">
+<h3 class="text-[11px] font-semibold text-[#FAFAFA] tracking-wide uppercase">Active Build</h3>
+</div>
+<div class="flex items-center gap-4 mb-4">
+<div class="w-10 h-10 rounded bg-[#10B981]/10 border border-[#10B981]/20 flex items-center justify-center">
+<span class="material-symbols-outlined text-[#10B981]">check_circle</span>
+</div>
+<div>
+<div class="font-mono text-sm text-[#FAFAFA] flex items-center gap-2">
+                                    a1b2c3d
+                                    <span class="text-[10px] bg-[#1F1F1F] px-1.5 py-0.5 rounded text-[#A1A1AA]">main</span>
+</div>
+<div class="text-xs text-[#A1A1AA] mt-1">Deployed 4h ago by github-actions</div>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-4 border-t border-[#1F1F1F] pt-4">
+<div>
+<div class="text-[10px] text-[#52525B] uppercase font-semibold tracking-wide mb-1">Duration</div>
+<div class="text-sm text-[#FAFAFA] font-mono">2m 14s</div>
+</div>
+<div>
+<div class="text-[10px] text-[#52525B] uppercase font-semibold tracking-wide mb-1">Image Size</div>
+<div class="text-sm text-[#FAFAFA] font-mono">142 MB</div>
+</div>
+</div>
+</div>
+</div>
+</div>
+<!-- Builds Table -->
+<div class="mt-4 bg-[#111111] border border-[#1F1F1F] rounded-lg overflow-hidden flex flex-col">
+<div class="px-4 py-3 border-b border-[#1F1F1F] flex items-center justify-between bg-[#111111]">
+<h3 class="text-[13px] font-semibold text-[#FAFAFA]">Recent Builds (12)</h3>
+<button class="text-xs text-[#A1A1AA] hover:text-[#FAFAFA] transition-colors">View All</button>
+</div>
+<div class="overflow-x-auto">
+<table class="w-full text-left border-collapse">
+<thead>
+<tr class="border-b border-[#1F1F1F]">
+<th class="py-2 px-4 text-[11px] font-semibold text-[#A1A1AA] uppercase tracking-wide">Build</th>
+<th class="py-2 px-4 text-[11px] font-semibold text-[#A1A1AA] uppercase tracking-wide">Status</th>
+<th class="py-2 px-4 text-[11px] font-semibold text-[#A1A1AA] uppercase tracking-wide">Trigger</th>
+<th class="py-2 px-4 text-[11px] font-semibold text-[#A1A1AA] uppercase tracking-wide">Started</th>
+<th class="py-2 px-4 text-[11px] font-semibold text-[#A1A1AA] uppercase tracking-wide text-right">Duration</th>
+<th class="py-2 px-4"></th>
+</tr>
+</thead>
+<tbody class="text-sm font-mono">
+<tr class="border-b border-[#1F1F1F] hover:bg-[#161616] transition-colors group">
+<td class="py-3 px-4 text-[#FAFAFA]">a1b2c3d</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full border border-[#10B981]/30 bg-[#10B981]/10 text-[11px] text-[#10B981] uppercase tracking-wide">Success</span>
+</td>
+<td class="py-3 px-4 text-[#A1A1AA]">github-actions</td>
+<td class="py-3 px-4 text-[#A1A1AA]">4h ago</td>
+<td class="py-3 px-4 text-[#A1A1AA] text-right">2m 14s</td>
+<td class="py-3 px-4 text-right">
+<button class="text-[11px] text-[#52525B] group-hover:text-[#FAFAFA] font-sans transition-colors">open log</button>
+</td>
+</tr>
+<tr class="border-b border-[#1F1F1F] hover:bg-[#161616] transition-colors group">
+<td class="py-3 px-4 text-[#FAFAFA]">f4e5d6c</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full border border-[#EF4444]/30 bg-[#EF4444]/10 text-[11px] text-[#EF4444] uppercase tracking-wide">Failed</span>
+</td>
+<td class="py-3 px-4 text-[#A1A1AA]">johndoe</td>
+<td class="py-3 px-4 text-[#A1A1AA]">Yesterday</td>
+<td class="py-3 px-4 text-[#A1A1AA] text-right">45s</td>
+<td class="py-3 px-4 text-right">
+<button class="text-[11px] text-[#52525B] group-hover:text-[#FAFAFA] font-sans transition-colors">open log</button>
+</td>
+</tr>
+<tr class="hover:bg-[#161616] transition-colors group">
+<td class="py-3 px-4 text-[#FAFAFA]">9b8a7c6</td>
+<td class="py-3 px-4">
+<span class="inline-flex items-center justify-center px-2 py-0.5 rounded-full border border-[#10B981]/30 bg-[#10B981]/10 text-[11px] text-[#10B981] uppercase tracking-wide">Success</span>
+</td>
+<td class="py-3 px-4 text-[#A1A1AA]">github-actions</td>
+<td class="py-3 px-4 text-[#A1A1AA]">2 days ago</td>
+<td class="py-3 px-4 text-[#A1A1AA] text-right">2m 05s</td>
+<td class="py-3 px-4 text-right">
+<button class="text-[11px] text-[#52525B] group-hover:text-[#FAFAFA] font-sans transition-colors">open log</button>
+</td>
+</tr>
+</tbody>
+</table>
+</div>
+</div>
+</main>
+</div>
+</body></html>
