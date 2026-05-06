@@ -41,4 +41,5 @@ nul
 # Persistent agent / session artifacts at repo root
 .bridgemind_transcripts/
 .claude/
+.superpowers/
 hermes-deploy-state-*.md
