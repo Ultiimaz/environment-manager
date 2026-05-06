@@ -18,6 +18,7 @@ import (
 
 	"github.com/environment-manager/backend/internal/builder"
 	"github.com/environment-manager/backend/internal/credentials"
+	"github.com/environment-manager/backend/internal/iac"
 	"github.com/environment-manager/backend/internal/models"
 	"github.com/environment-manager/backend/internal/projects"
 	"github.com/environment-manager/backend/internal/repos"
@@ -168,6 +169,24 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 		_ = h.reposManager.Delete(repo.ID)
 		respondError(w, http.StatusInternalServerError, "save_env_failed", err.Error())
 		return
+	}
+
+	// Plan 8: cross-project domain conflict check.
+	// Best-effort: try to parse the dev config as v2; if it parses, walk all
+	// other projects' v2 configs and reject conflicting domains. v1-only
+	// projects skip this check entirely (no Domains block to conflict on).
+	if iacBytes, rerr := os.ReadFile(filepath.Join(repo.LocalPath, ".dev", "config.yaml")); rerr == nil {
+		if iacCfg, perr := iac.Parse(iacBytes); perr == nil {
+			others, oerr := h.collectIacConfigs(project.ID)
+			if oerr == nil {
+				if cerr := iac.CheckDomainConflict(iacCfg, project.ID, others); cerr != nil {
+					_ = h.store.DeleteProject(project.ID)
+					_ = h.reposManager.Delete(repo.ID)
+					respondError(w, http.StatusConflict, "DOMAIN_CONFLICT", cerr.Error())
+					return
+				}
+			}
+		}
 	}
 
 	requiredSecrets := devInfo.SecretKeys
@@ -468,4 +487,30 @@ func (h *ProjectsHandler) DeleteSecret(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// collectIacConfigs walks every onboarded project's .dev/config.yaml and
+// returns a map of project ID → parsed iac.Config for projects that parse
+// successfully under v2. Used by the domain conflict check.
+func (h *ProjectsHandler) collectIacConfigs(excludeID string) (map[string]*iac.Config, error) {
+	all, err := h.store.ListProjects()
+	if err != nil {
+		return nil, err
+	}
+	out := make(map[string]*iac.Config, len(all))
+	for _, p := range all {
+		if p.ID == excludeID {
+			continue
+		}
+		bytes, rerr := os.ReadFile(filepath.Join(p.LocalPath, ".dev", "config.yaml"))
+		if rerr != nil {
+			continue
+		}
+		cfg, perr := iac.Parse(bytes)
+		if perr != nil {
+			continue
+		}
+		out[p.ID] = cfg
+	}
+	return out, nil
 }
