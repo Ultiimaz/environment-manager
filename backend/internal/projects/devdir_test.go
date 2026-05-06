@@ -21,13 +21,18 @@ func makeRepo(t *testing.T, files map[string]string) string {
 	return dir
 }
 
+const validV2Config = `project_name: myapp
+expose:
+  service: app
+  port: 80
+`
+
 func TestDetectDevDir_Valid(t *testing.T) {
 	repo := makeRepo(t, map[string]string{
 		".dev/Dockerfile.dev":          "FROM alpine\n",
 		".dev/docker-compose.prod.yml": "services: {}\n",
 		".dev/docker-compose.dev.yml":  "services: {}\n",
-		".dev/config.yaml":             "project_name: myapp\n",
-		".dev/secrets.example.env":     "APP_KEY=\n",
+		".dev/config.yaml":             validV2Config,
 	})
 
 	info, err := DetectDevDir(repo)
@@ -37,8 +42,32 @@ func TestDetectDevDir_Valid(t *testing.T) {
 	if info.Config.ProjectName != "myapp" {
 		t.Errorf("ProjectName = %q, want myapp", info.Config.ProjectName)
 	}
-	if len(info.SecretKeys) != 1 || info.SecretKeys[0] != "APP_KEY" {
-		t.Errorf("SecretKeys = %v, want [APP_KEY]", info.SecretKeys)
+	if info.Config.Expose.Service != "app" || info.Config.Expose.Port != 80 {
+		t.Errorf("Expose = %+v, want {app 80}", info.Config.Expose)
+	}
+}
+
+func TestDetectDevDir_SecretsFromConfig(t *testing.T) {
+	cfg := `project_name: myapp
+expose:
+  service: app
+  port: 80
+secrets:
+  - APP_KEY
+  - DB_PASSWORD
+`
+	repo := makeRepo(t, map[string]string{
+		".dev/Dockerfile.dev":          "FROM alpine\n",
+		".dev/docker-compose.prod.yml": "services: {}\n",
+		".dev/docker-compose.dev.yml":  "services: {}\n",
+		".dev/config.yaml":             cfg,
+	})
+	info, err := DetectDevDir(repo)
+	if err != nil {
+		t.Fatalf("DetectDevDir: %v", err)
+	}
+	if len(info.SecretKeys) != 2 || info.SecretKeys[0] != "APP_KEY" || info.SecretKeys[1] != "DB_PASSWORD" {
+		t.Errorf("SecretKeys = %v, want [APP_KEY DB_PASSWORD]", info.SecretKeys)
 	}
 }
 
@@ -55,7 +84,7 @@ func TestDetectDevDir_MissingRequiredFile(t *testing.T) {
 		".dev/Dockerfile.dev":          "FROM alpine\n",
 		".dev/docker-compose.prod.yml": "services: {}\n",
 		// missing docker-compose.dev.yml
-		".dev/config.yaml": "project_name: myapp\n",
+		".dev/config.yaml": validV2Config,
 	})
 	_, err := DetectDevDir(repo)
 	if err == nil {
@@ -63,20 +92,20 @@ func TestDetectDevDir_MissingRequiredFile(t *testing.T) {
 	}
 }
 
-func TestDetectDevDir_NoSecretsFile(t *testing.T) {
-	// secrets.example.env is OPTIONAL — its absence yields nil keys, no error.
+func TestDetectDevDir_NoSecretsBlock(t *testing.T) {
+	// secrets is optional in v2 schema — empty list yields nil SecretKeys.
 	repo := makeRepo(t, map[string]string{
 		".dev/Dockerfile.dev":          "FROM alpine\n",
 		".dev/docker-compose.prod.yml": "services: {}\n",
 		".dev/docker-compose.dev.yml":  "services: {}\n",
-		".dev/config.yaml":             "",
+		".dev/config.yaml":             validV2Config,
 	})
 	info, err := DetectDevDir(repo)
 	if err != nil {
 		t.Fatalf("DetectDevDir: %v", err)
 	}
 	if info.SecretKeys != nil {
-		t.Errorf("SecretKeys = %v, want nil for missing secrets file", info.SecretKeys)
+		t.Errorf("SecretKeys = %v, want nil for omitted secrets block", info.SecretKeys)
 	}
 }
 
@@ -85,10 +114,11 @@ func TestDetectDevDir_InvalidConfig(t *testing.T) {
 		".dev/Dockerfile.dev":          "FROM alpine\n",
 		".dev/docker-compose.prod.yml": "services: {}\n",
 		".dev/docker-compose.dev.yml":  "services: {}\n",
-		".dev/config.yaml":             "database:\n  engine: cockroach\n  version: \"23\"\n",
+		// expose.port out of range — iac.Parse rejects.
+		".dev/config.yaml": "project_name: myapp\nexpose:\n  service: app\n  port: 99999\n",
 	})
 	_, err := DetectDevDir(repo)
 	if err == nil {
-		t.Fatal("expected error for invalid config (unknown DB engine)")
+		t.Fatal("expected error for invalid config (port out of range)")
 	}
 }

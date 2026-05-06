@@ -44,7 +44,7 @@ func makeFixtureRepo(t *testing.T) string {
 		".dev/Dockerfile.dev":          "FROM alpine\n",
 		".dev/docker-compose.prod.yml": "services:\n  app:\n    image: hello-world\n",
 		".dev/docker-compose.dev.yml":  "services:\n  app:\n    image: hello-world\n",
-		".dev/config.yaml":             "project_name: fixture\n",
+		".dev/config.yaml":             "project_name: fixture\nexpose:\n  service: app\n  port: 80\n",
 	}
 	for rel, content := range files {
 		path := filepath.Join(dir, rel)

@@ -128,17 +128,19 @@ func (h *ProjectsHandler) Create(w http.ResponseWriter, r *http.Request) {
 
 	projectID := projectIDFromRepo(req.RepoURL)
 	project := &models.Project{
-		ID:             projectID,
-		Name:           projectName,
-		RepoURL:        req.RepoURL,
-		LocalPath:      repo.LocalPath,
-		DefaultBranch:  defaultBranch,
-		ExternalDomain: devInfo.Config.ExternalDomain,
-		Database:       devInfo.Config.Database,
-		PublicBranches: devInfo.Config.PublicBranches,
-		Expose:         devInfo.Config.Expose,
-		Status:         models.ProjectStatusActive,
-		CreatedAt:      now,
+		ID:            projectID,
+		Name:          projectName,
+		RepoURL:       req.RepoURL,
+		LocalPath:     repo.LocalPath,
+		DefaultBranch: defaultBranch,
+		// iac.Config.Expose is required and populated; convert to the
+		// models.ExposeSpec shape the rest of the runtime expects.
+		Expose: &models.ExposeSpec{
+			Service: devInfo.Config.Expose.Service,
+			Port:    devInfo.Config.Expose.Port,
+		},
+		Status:    models.ProjectStatusActive,
+		CreatedAt: now,
 	}
 	if err := h.store.SaveProject(project); err != nil {
 		_ = h.reposManager.Delete(repo.ID)
