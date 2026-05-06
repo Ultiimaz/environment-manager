@@ -1,10 +1,14 @@
 # env-manager v1 → v2 migration runbook
 
 **For:** the home-lab operator running env-manager on `192.168.1.116`.
-**Estimated downtime:** ~5 minutes during Phase 3.
-**Prereqs:** all v2 PRs (Plans 1-7) merged + redeployed; redeploy script updated to set `LETSENCRYPT_EMAIL`.
+**Estimated downtime:** ~30s during Phase 3 (env-manager redeploy only; user containers stay up via Plan 4's split build/up).
+**Prereqs:** all v2 PRs (Plans 1-8) merged + redeployed.
 
-This runbook covers Phases 2-5 of the v2 cutover. Phase 1 (the code refactor) is the eight merged PRs.
+This runbook covers Phases 0-5, 7-8 of the v2 cutover. Phase 1 (the code refactor) is the eight merged PRs (Plans 1, 2, 3a, 3b, 4, 5, 6a, 6b, 7, 8 — yes, 6 was split into 6a/6b).
+
+## Status note (2026-05-06)
+
+Phases 1-5 were executed by the autonomous runbook session on 2026-05-06; Phase 0 was deliberately skipped (Docker stop = full home-lab outage; the per-phase rollback paths are sufficient). Phase 6 (env-manager's own public hostname `manager.blocksweb.nl`) was **dropped** by operator decision — env-manager stays LAN-only. Phase 7 (Traefik LE flags) was **deferred** because TLS for stripe-payments is currently terminated by Cloudflare orange-cloud (proxied), not at Traefik. If you switch to Cloudflare grey-cloud later you'll need Phase 7. Phase 4's stripe-payments migration was minimal (cosmetic schema cleanup; mariadb + redis sidecars retained); a future iteration can consolidate onto paas-postgres after a `mysqldump → psql` data migration.
 
 ## Phase 0 — pre-cutover snapshot
 
@@ -90,7 +94,23 @@ You should see your existing projects (stripe-payments).
 
 ## Phase 4 — migrate stripe-payments to v2 schema
 
-In the stripe-payments repo on your laptop:
+**Two paths exist:**
+- **Path A (minimal, executed on 2026-05-06):** drop the v1-only `public_branches` field from `.dev/config.yaml` so iac.Parse succeeds. Keep mariadb + redis sidecars. Keep Cloudflare TLS termination. Behaviour identical to v1; runner activates the v2 path with empty domains/services/hooks. **Risk: low.**
+- **Path B (full):** consolidate onto paas-postgres + paas-redis, declare custom domains, add hooks. **Risk: high — requires `mysqldump → psql` data migration, Laravel `config/database.php` pgsql review, schema dialect testing.** Operator should execute on a dev environment first.
+
+### Path A — minimal (DONE 2026-05-06)
+
+The host clone at `/data/compose/16/data/repos/blocksweb-dasboard-laravel/` has been updated and committed locally:
+```
+fae7ff7c feat(.dev): migrate config.yaml to env-manager v2 schema (drop public_branches)
+```
+Both `main` and `develop` envs were rebuilt; Traefik routers now use the v2 `<env_id>-home` shape (`91497099a7a1c68c--main-home@docker`, `91497099a7a1c68c--develop-home@docker`). Verified: `stripe-payments.home` → 200, `develop.stripe-payments.home` → 200.
+
+**Followup:** the host clone has 5 unpushed commits (4 pre-existing operator fixes + the v2 schema commit). When ready, push to GitHub origin/main from the host (using the PAT in cred-store) so source-of-truth aligns.
+
+### Path B — full (DEFERRED, optional)
+
+If you later want to migrate to paas-postgres / paas-redis:
 
 1. Edit `.dev/config.yaml` to the v2 schema. Replace its current contents with (adjust to taste):
 
@@ -177,65 +197,37 @@ envm secrets list stripe-payments
 # Should show 5 keys
 ```
 
-## Phase 6 — env-manager's own public hostname (deferred from Plan 6)
+## Phase 6 — DROPPED (env-manager stays LAN-only)
 
-To receive GitHub webhooks externally, env-manager needs its own public hostname. The current setup runs on LAN `192.168.1.6:8080`.
+env-manager admin API is not exposed publicly. Operator decision (2026-05-06). Per-project GitHub webhooks for stripe-payments etc. are handled by manual build triggers via `envm builds trigger <project>/<env>` from the LAN, OR by configuring env-updater to forward `/api/v1/webhook/*` paths through `callback.blocksweb.nl/env-manager/...` (not yet done).
 
-1. In Cloudflare DNS for `blocksweb.nl`: add A record `manager → 84.84.207.234` (your home-lab public IP), proxy off (grey cloud) so Let's Encrypt's TLS-ALPN works.
+If you later decide to expose env-manager publicly, the original Phase 6 procedure (Cloudflare DNS A record + port 443 forward + Traefik labels with LE resolver) is preserved in git history of this file.
 
-2. Open port 443 on the KPN modem + ISP router pointing at `192.168.1.6` (env-traefik).
+## Phase 7 — Traefik Let's Encrypt resolver flags (DEFERRED, optional)
 
-3. Add Traefik labels to env-manager's container. Edit `/data/compose/16/docker-compose.yaml` (or wherever env-manager's compose lives):
+Currently TLS for `blocksweb.nl` and `www.blocksweb.nl` is terminated by Cloudflare (orange-cloud / proxied), not at env-traefik. The origin serves plain HTTP. With this setup, no Let's Encrypt config on env-traefik is needed.
 
-```yaml
-services:
-  env-manager:
-    # ... existing config ...
-    labels:
-      - "traefik.enable=true"
-      - "traefik.http.routers.env-manager.rule=Host(\`manager.blocksweb.nl\`)"
-      - "traefik.http.routers.env-manager.entrypoints=websecure"
-      - "traefik.http.routers.env-manager.tls=true"
-      - "traefik.http.routers.env-manager.tls.certresolver=letsencrypt"
-      - "traefik.http.services.env-manager.loadbalancer.server.port=8080"
-      - "traefik.docker.network=my-macvlan-net"
-    networks:
-      - paas-net
-      - my-macvlan-net
-```
+If you switch any public domain to Cloudflare DNS-only (grey cloud) — e.g., for a non-HTTP service or to bypass Cloudflare — you'll need to add LE flags to env-traefik so the origin can terminate TLS itself. Procedure:
 
-4. `docker compose up -d` env-manager. Wait ~30s for cert issuance.
+1. Find how env-traefik was launched. As of 2026-05-06 it's NOT compose-managed (orphan stack — current invocation is the `docker run` printed by `docker inspect env-traefik`). Either:
+   - Reproduce its current `docker run` invocation in a real `docker-compose.yaml` first
+   - OR re-issue `docker run` with the extra args directly
 
-5. Update each GitHub repo's webhook URL to `https://manager.blocksweb.nl/api/v1/webhook/github` (was `http://192.168.1.6:8080/...` if exposed).
+2. Add command flags:
+   ```
+   --entrypoints.websecure.address=:443
+   --certificatesresolvers.letsencrypt.acme.email=ops@blocksweb.nl
+   --certificatesresolvers.letsencrypt.acme.storage=/data/acme.json
+   --certificatesresolvers.letsencrypt.acme.tlschallenge=true
+   ```
 
-6. Update your local `~/.envm/config.yaml`:
+3. Add port mapping `-p 443:443` and a persistent volume `-v traefik_acme:/data`.
 
-```yaml
-endpoint: https://manager.blocksweb.nl
-token: envm_...
-```
+4. Open port 443 on the KPN modem + ISP router pointing at `192.168.1.6`.
 
-## Phase 7 — Traefik Let's Encrypt resolver flags (deferred from Plan 5)
+5. Recreate the container. Watch `docker logs env-traefik` for "Server stopped"/"Server started". Cert acquisition for declared `domains.prod` takes ~30-60s per domain.
 
-Edit env-traefik's compose command flags:
-
-```yaml
-services:
-  env-traefik:
-    command:
-      - "--providers.docker=true"
-      - "--providers.docker.exposedbydefault=false"
-      - "--providers.docker.network=my-macvlan-net"
-      - "--entrypoints.web.address=:80"
-      - "--entrypoints.websecure.address=:443"
-      - "--certificatesresolvers.letsencrypt.acme.email=ops@blocksweb.nl"
-      - "--certificatesresolvers.letsencrypt.acme.storage=/data/acme.json"
-      - "--certificatesresolvers.letsencrypt.acme.tlschallenge=true"
-    volumes:
-      - traefik_acme:/data
-```
-
-Then `docker compose up -d` env-traefik. Watch its logs for "Server stopped"/"Server started" cycle. Cert acquisition for already-pushed v2 stripe-payments takes ~30-60s per domain.
+Until then, env-manager v2's Plan 5 label generator emits HTTPS routers referencing the `letsencrypt` resolver if a project declares `domains.prod` — Traefik will log warnings about the missing resolver but the `.home` HTTP routers (which is what every project actually uses today) work fine.
 
 ## Phase 8 — cleanup
 
@@ -258,5 +250,5 @@ Keep this runbook in `docs/superpowers/specs/` for reference.
 | 3 | v2 binary fails to boot | `git revert <merge-commit>` + redeploy |
 | 4 | stripe-payments fails on v2 | Revert .dev/ changes, push; redeploy v1 binary if Phase 3 also reverted |
 | 5 | Domain doesn't return 200 | Check Traefik logs (`docker logs env-traefik`), verify `LETSENCRYPT_EMAIL` is set, check Cloudflare DNS |
-| 6 | Cert not issued for manager.blocksweb.nl | Verify port 443 forwarded, Cloudflare proxy is grey cloud, Phase 7 done |
-| 7 | env-traefik doesn't restart | `docker logs env-traefik` for syntax errors in compose flags |
+| 6 | n/a — phase dropped | n/a |
+| 7 | env-traefik doesn't restart | `docker run` the original invocation (logged via `docker inspect env-traefik` before the change) |
