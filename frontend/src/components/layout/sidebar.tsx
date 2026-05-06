@@ -22,11 +22,11 @@ interface NavItem {
 }
 
 const navItems: NavItem[] = [
-  { title: "Home", href: "/", icon: Home },
+  { title: "Overview", href: "/", icon: Home },
   { title: "Projects", href: "/projects", icon: Rocket },
-  { title: "Builds", href: "/builds", icon: Hammer },
   { title: "Services", href: "/services", icon: Database },
   { title: "Topology", href: "/topology", icon: Network },
+  { title: "Builds", href: "/builds", icon: Hammer },
   { title: "Settings", href: "/settings", icon: Settings },
 ]
 
@@ -38,22 +38,27 @@ export function Sidebar() {
     <TooltipProvider delayDuration={0}>
       <aside
         className={cn(
-          "hidden lg:flex flex-col h-screen bg-card border-r border-border transition-all duration-300",
-          sidebarCollapsed ? "w-16" : "w-64"
+          "hidden lg:flex flex-col h-screen bg-background border-r border-border transition-all duration-300",
+          sidebarCollapsed ? "w-16" : "w-[220px]"
         )}
       >
-        <div className="flex items-center justify-between h-14 px-4 border-b border-border">
+        <div className="flex items-center justify-between h-[52px] px-4 border-b border-border">
           {!sidebarCollapsed && (
-            <Link to="/" className="flex items-center gap-2">
-              <Box className="h-6 w-6 text-primary" />
-              <span className="font-semibold text-lg">Env Manager</span>
+            <Link to="/" className="flex flex-col leading-tight min-w-0">
+              <span className="flex items-center gap-2">
+                <Box className="h-5 w-5 text-primary shrink-0" />
+                <span className="font-semibold text-[15px] tracking-tight">Env Manager</span>
+              </span>
+              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 ml-7 mt-0.5">
+                v2.4.0 · pro
+              </span>
             </Link>
           )}
           <Button
             variant="ghost"
             size="icon"
             onClick={toggleSidebar}
-            className={cn(sidebarCollapsed && "mx-auto")}
+            className={cn("h-7 w-7", sidebarCollapsed && "mx-auto")}
           >
             {sidebarCollapsed ? (
               <ChevronRight className="h-4 w-4" />
@@ -63,8 +68,8 @@ export function Sidebar() {
           </Button>
         </div>
 
-        <nav className="flex-1 py-4 overflow-y-auto">
-          <ul className="space-y-1 px-2">
+        <nav className="flex-1 py-3 overflow-y-auto">
+          <ul className="space-y-0.5 px-2">
             {navItems.map((item) => {
               const isActive = location.pathname === item.href ||
                 (item.href !== "/" && location.pathname.startsWith(item.href))
@@ -73,14 +78,15 @@ export function Sidebar() {
                 <Link
                   to={item.href}
                   className={cn(
-                    "flex items-center gap-3 px-3 py-2 rounded-md text-sm font-medium transition-colors",
+                    "group relative flex items-center gap-3 pl-3 pr-3 py-2 rounded-md text-[13px] font-medium transition-colors",
+                    // Active = subtle bg + 2px green left border (Stitch design)
                     isActive
-                      ? "bg-primary text-primary-foreground"
-                      : "text-muted-foreground hover:bg-accent hover:text-accent-foreground",
+                      ? "bg-secondary text-foreground before:absolute before:left-0 before:top-1.5 before:bottom-1.5 before:w-[2px] before:rounded-full before:bg-primary"
+                      : "text-muted-foreground hover:bg-secondary/60 hover:text-foreground",
                     sidebarCollapsed && "justify-center px-2"
                   )}
                 >
-                  <item.icon className="h-5 w-5 shrink-0" />
+                  <item.icon className="h-4 w-4 shrink-0" />
                   {!sidebarCollapsed && <span>{item.title}</span>}
                 </Link>
               )
