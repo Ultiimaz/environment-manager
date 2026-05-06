@@ -136,10 +136,6 @@ export function Header() {
           >
             <RefreshCw className="h-4 w-4" />
           </Button>
-          {/* Avatar placeholder */}
-          <div className="h-7 w-7 rounded-full bg-secondary border border-border flex items-center justify-center text-[11px] font-semibold uppercase text-muted-foreground">
-            U
-          </div>
         </div>
       </div>
     </header>

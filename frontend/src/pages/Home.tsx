@@ -1,7 +1,39 @@
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { listProjects, getPostgresStatus, getRedisStatus, getSettings } from '@/services/api'
+import {
+  listProjects,
+  getProject,
+  listBuildsForEnv,
+  getPostgresStatus,
+  getRedisStatus,
+  getSettings,
+} from '@/services/api'
 import { cn } from '@/lib/utils'
+
+// Aggregate cross-project counts. N+1 over projects/envs is acceptable for a
+// homelab with a handful of projects; React Query dedupes against the same key.
+async function fetchAggregates(): Promise<{ envCount: number; builds24h: number }> {
+  const projects = await listProjects()
+  const details = await Promise.all(projects.map((p) => getProject(p.id)))
+  const envCount = details.reduce((acc, d) => acc + d.environments.length, 0)
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000
+  let builds24h = 0
+  await Promise.all(
+    details.flatMap((d) =>
+      d.environments.map(async (e) => {
+        try {
+          const bs = await listBuildsForEnv(e.id)
+          for (const b of bs) {
+            if (new Date(b.started_at).getTime() >= cutoff) builds24h++
+          }
+        } catch {
+          // skip envs without builds
+        }
+      })
+    )
+  )
+  return { envCount, builds24h }
+}
 
 // Stitch Overview design (.design/stitch-v1/02-overview.html)
 // Single green accent (#10B981 = primary), Geist, dense info.
@@ -77,9 +109,15 @@ export default function Home() {
   const projects = useQuery({ queryKey: ['projects'], queryFn: listProjects })
   const postgres = useQuery({ queryKey: ['services', 'postgres'], queryFn: getPostgresStatus })
   const redis = useQuery({ queryKey: ['services', 'redis'], queryFn: getRedisStatus })
+  const aggregates = useQuery({
+    queryKey: ['aggregates'],
+    queryFn: fetchAggregates,
+    refetchInterval: 30000,
+  })
 
   const projectCount = projects.data?.length ?? 0
-  const serviceCount = 2 // postgres + redis (singletons)
+  const runningSingletons =
+    (postgres.data?.running ? 1 : 0) + (redis.data?.running ? 1 : 0)
 
   return (
     <div className="px-6 py-6 space-y-6 max-w-[1400px] mx-auto">
@@ -97,9 +135,15 @@ export default function Home() {
       {/* Metric tiles */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
         <MetricTile label="Projects" value={projectCount} />
-        <MetricTile label="Environments" value="—" hint="aggregate via API" />
-        <MetricTile label="Services" value={serviceCount} />
-        <MetricTile label="Builds 24h" value="—" hint="aggregate via API" />
+        <MetricTile
+          label="Environments"
+          value={aggregates.data ? aggregates.data.envCount : '—'}
+        />
+        <MetricTile label="Services" value={`${runningSingletons} / 2`} hint="postgres + redis" />
+        <MetricTile
+          label="Builds 24h"
+          value={aggregates.data ? aggregates.data.builds24h : '—'}
+        />
       </div>
 
       {/* Two-column grid: recent activity + service health */}
