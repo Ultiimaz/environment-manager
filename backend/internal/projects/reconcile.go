@@ -22,8 +22,12 @@ type EnvSpawner interface {
 //   - branches with `.dev/` but no local env → SpawnPreview
 //   - local envs with no remote branch (and Kind != prod) → Teardown
 //
+// gitToken is invoked per fetch to look up a credential (typically the
+// __provider:github PAT from the credential store). Pass nil or a no-op
+// closure to disable auth — useful for tests or public repos.
+//
 // Returns a summary message per project for logging.
-func ReconcileBranches(ctx context.Context, store *Store, spawner EnvSpawner, fallbackBaseDomain string, logger *zap.Logger) ([]string, error) {
+func ReconcileBranches(ctx context.Context, store *Store, spawner EnvSpawner, fallbackBaseDomain string, logger *zap.Logger, gitToken func() string) ([]string, error) {
 	allProjects, err := store.ListProjects()
 	if err != nil {
 		return nil, err
@@ -34,7 +38,11 @@ func ReconcileBranches(ctx context.Context, store *Store, spawner EnvSpawner, fa
 			// Legacy migrated projects (no repo): skip.
 			continue
 		}
-		if out, err := FetchOrigin(p.LocalPath); err != nil {
+		token := ""
+		if gitToken != nil {
+			token = gitToken()
+		}
+		if out, err := FetchOrigin(p.LocalPath, token); err != nil {
 			logger.Warn("git fetch failed during reconcile",
 				zap.String("project", p.ID),
 				zap.String("out", string(out)),

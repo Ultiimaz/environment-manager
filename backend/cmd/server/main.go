@@ -149,7 +149,17 @@ func main() {
 		runner:             buildRunner,
 		fallbackBaseDomain: cfg.BaseDomain,
 	}
-	if summaries, err := projects.ReconcileBranches(context.Background(), projectsStore, spawner, cfg.BaseDomain, logger); err != nil {
+	gitTokenFn := func() string {
+		if credStore == nil {
+			return ""
+		}
+		tok, err := credStore.GetGlobalToken("github")
+		if err != nil {
+			return ""
+		}
+		return tok
+	}
+	if summaries, err := projects.ReconcileBranches(context.Background(), projectsStore, spawner, cfg.BaseDomain, logger, gitTokenFn); err != nil {
 		logger.Error("reconcile branches failed", zap.Error(err))
 	} else if len(summaries) > 0 {
 		logger.Info("Reconcile complete", zap.Strings("changes", summaries))

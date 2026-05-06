@@ -102,7 +102,7 @@ func TestReconcileBranches_SpawnsForNewRemoteBranch(t *testing.T) {
 	runIn(workdir2, "push", "origin", "feature/x")
 
 	spawner := &fakeSpawner{}
-	summaries, err := ReconcileBranches(context.Background(), store, spawner, "home", zap.NewNop())
+	summaries, err := ReconcileBranches(context.Background(), store, spawner, "home", zap.NewNop(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -130,7 +130,7 @@ func TestReconcileBranches_TearsDownGoneBranch(t *testing.T) {
 	_ = store.SaveEnvironment(ghost)
 
 	spawner := &fakeSpawner{}
-	_, err := ReconcileBranches(context.Background(), store, spawner, "home", zap.NewNop())
+	_, err := ReconcileBranches(context.Background(), store, spawner, "home", zap.NewNop(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -156,7 +156,7 @@ func TestReconcileBranches_ProdExempt(t *testing.T) {
 	_ = store.SaveEnvironment(prod)
 
 	spawner := &fakeSpawner{}
-	_, err := ReconcileBranches(context.Background(), store, spawner, "home", zap.NewNop())
+	_, err := ReconcileBranches(context.Background(), store, spawner, "home", zap.NewNop(), nil)
 	if err != nil {
 		t.Fatal(err)
 	}

@@ -1,6 +1,7 @@
 package projects
 
 import (
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -18,11 +19,34 @@ func DevDirExistsForBranch(repoPath, branch string) bool {
 	return strings.TrimSpace(string(out)) != ""
 }
 
-// FetchOrigin runs `git fetch origin --prune` in repoPath. Returns the
-// combined output and any error. Best-effort: callers typically log + continue.
-func FetchOrigin(repoPath string) ([]byte, error) {
-	cmd := exec.Command("git", "fetch", "origin", "--prune")
+// FetchOrigin runs `git fetch origin --prune` in repoPath. When token is
+// non-empty, it's injected via a one-off git credential helper so HTTPS
+// remotes (typically GitHub PATs from the credential store) authenticate
+// successfully. GIT_TERMINAL_PROMPT=0 is set unconditionally so a stale or
+// missing token fails fast with a clear error rather than hanging on a TTY
+// prompt.
+//
+// Returns the combined output and any error. Best-effort: callers typically
+// log + continue.
+func FetchOrigin(repoPath, token string) ([]byte, error) {
+	var args []string
+	env := append(os.Environ(), "GIT_TERMINAL_PROMPT=0")
+
+	if token != "" {
+		// Inline shell credential helper. The helper script is one line of sh
+		// that emits username/password to stdout for git to consume. The PAT
+		// is passed via an env var (ENVM_GIT_TOKEN) so it doesn't appear in
+		// the process arg list visible to `ps`.
+		args = append(args,
+			"-c", `credential.helper=!sh -c 'echo username=oauth; echo password="$ENVM_GIT_TOKEN"'`,
+		)
+		env = append(env, "ENVM_GIT_TOKEN="+token)
+	}
+
+	args = append(args, "fetch", "origin", "--prune")
+	cmd := exec.Command("git", args...)
 	cmd.Dir = repoPath
+	cmd.Env = env
 	return cmd.CombinedOutput()
 }
 
