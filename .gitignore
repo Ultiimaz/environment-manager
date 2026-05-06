@@ -32,6 +32,13 @@ Thumbs.db
 
 # Playwright MCP screenshots
 .playwright-mcp/
+builds-page-with-log-panel.png
+builds-with-logs-fullpage.png
 
 # Windows artifacts
 nul
+
+# Persistent agent / session artifacts at repo root
+.bridgemind_transcripts/
+.claude/
+hermes-deploy-state-*.md
