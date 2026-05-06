@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
-import { RefreshCw, Play, ExternalLink, Plus, Settings } from 'lucide-react'
+import { RefreshCw, Play, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { getProject, triggerBuild } from '@/services/api'
 import type { ProjectDetail, Environment } from '@/services/api'
@@ -117,7 +117,7 @@ export default function ProjectDetailPage() {
   const [error, setError] = useState<string | null>(null)
   const [logEnvId, setLogEnvId] = useState<string | null>(null)
   const [triggering, setTriggering] = useState<string | null>(null)
-  const [activeTab, setActiveTab] = useState<'environments' | 'builds' | 'settings'>('environments')
+  const [activeTab, setActiveTab] = useState<'environments' | 'builds'>('environments')
 
   async function load() {
     if (!id) return
@@ -213,12 +213,6 @@ export default function ProjectDetailPage() {
           <Button variant="outline" size="sm" onClick={load} className="h-8">
             <RefreshCw className="h-3.5 w-3.5 mr-1.5" /> Refresh
           </Button>
-          <Button variant="outline" size="sm" className="h-8">
-            <Settings className="h-3.5 w-3.5 mr-1.5" /> Settings
-          </Button>
-          <Button size="sm" className="h-8">
-            <Plus className="h-3.5 w-3.5 mr-1.5" /> New environment
-          </Button>
         </div>
       </header>
 
@@ -242,7 +236,7 @@ export default function ProjectDetailPage() {
       {/* Tabs */}
       <div className="border-b border-border">
         <nav className="flex gap-1">
-          {(['environments', 'builds', 'settings'] as const).map((tab) => (
+          {(['environments', 'builds'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -285,13 +279,7 @@ export default function ProjectDetailPage() {
 
       {activeTab === 'builds' && (
         <div className="rounded-lg border border-border bg-card p-6 text-[12px] text-muted-foreground">
-          Builds tab — see <Link to="/builds" className="text-primary hover:underline">/builds</Link> for the cross-project view.
-        </div>
-      )}
-
-      {activeTab === 'settings' && (
-        <div className="rounded-lg border border-border bg-card p-6 text-[12px] text-muted-foreground">
-          Project settings (coming soon).
+          See <Link to="/builds" className="text-primary hover:underline">/builds</Link> for the cross-project view.
         </div>
       )}
 

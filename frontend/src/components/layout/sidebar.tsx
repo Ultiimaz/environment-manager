@@ -14,6 +14,8 @@ import { cn } from "@/lib/utils"
 import { Button } from "@/components/ui/button"
 import { Tooltip, TooltipContent, TooltipTrigger, TooltipProvider } from "@/components/ui/tooltip"
 import { useUIStore } from "@/stores/ui-store"
+import { useQuery } from "@tanstack/react-query"
+import { getSettings } from "@/services/api"
 
 interface NavItem {
   title: string
@@ -33,6 +35,7 @@ const navItems: NavItem[] = [
 export function Sidebar() {
   const location = useLocation()
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
+  const settings = useQuery({ queryKey: ['settings'], queryFn: getSettings })
 
   return (
     <TooltipProvider delayDuration={0}>
@@ -49,9 +52,11 @@ export function Sidebar() {
                 <Box className="h-5 w-5 text-primary shrink-0" />
                 <span className="font-semibold text-[15px] tracking-tight">Env Manager</span>
               </span>
-              <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 ml-7 mt-0.5">
-                v2.4.0 · pro
-              </span>
+              {settings.data?.version && (
+                <span className="text-[10px] uppercase tracking-wider text-muted-foreground/70 ml-7 mt-0.5 font-mono">
+                  v{settings.data.version}
+                </span>
+              )}
             </Link>
           )}
           <Button

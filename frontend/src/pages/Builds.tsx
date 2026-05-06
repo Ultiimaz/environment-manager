@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query'
 import { useMemo, useState } from 'react'
 import { Link } from 'react-router-dom'
-import { GitCommit, PlayCircle, ChevronDown, Download } from 'lucide-react'
+import { GitCommit, PlayCircle, ChevronDown } from 'lucide-react'
 import { listProjects, getProject, listBuildsForEnv, getBuildLog, type Build } from '@/services/api'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
@@ -254,11 +254,6 @@ export default function Builds() {
               />
             </button>
           </label>
-          <span className="h-4 border-l border-border" />
-          <button className="inline-flex items-center gap-1.5 text-[12px] font-medium text-muted-foreground hover:text-foreground transition-colors">
-            <Download className="h-3.5 w-3.5" />
-            Export
-          </button>
         </div>
       </div>
 
