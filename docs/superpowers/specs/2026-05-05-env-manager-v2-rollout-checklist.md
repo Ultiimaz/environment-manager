@@ -124,5 +124,9 @@ After merge + redeploy:
 - [ ] Without a token saved, mutating actions fail visibly with 401
 - [ ] Legacy routes (/repos, /containers, /volumes, /network, /compose) return 404 in browser
 
-## Plan 8 — Migration runbook
-*(populated when plan 8 is written)*
+## Plan 8 — Migration runbook + final polish
+
+- [ ] Migration runbook at `docs/superpowers/specs/2026-05-05-env-manager-v2-migration-runbook.md` reviewed
+- [ ] Operator works through Phases 0-8 of the runbook on the home lab
+- [ ] `cd backend && go test ./internal/iac/... -v` passes new conflict tests
+- [ ] Manual: try to onboard two projects with overlapping `domains.prod` — second create returns 409 with the offending domain + owner ID
