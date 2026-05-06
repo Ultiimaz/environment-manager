@@ -125,7 +125,9 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 	if err := os.MkdirAll(logDir, 0755); err != nil {
 		return r.fail(env, b, "mkdir log dir: "+err.Error())
 	}
-	logPath := filepath.Join(logDir, "latest.log")
+	// Per-build log file so historical build logs survive subsequent builds.
+	// (Previously every build overwrote a shared "latest.log".)
+	logPath := filepath.Join(logDir, b.ID+".log")
 	log, err := buildlog.New(logPath, r.logRing)
 	if err != nil {
 		return r.fail(env, b, "open log: "+err.Error())

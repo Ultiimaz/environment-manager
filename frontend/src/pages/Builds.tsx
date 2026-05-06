@@ -1,8 +1,10 @@
 import { useQuery } from '@tanstack/react-query'
+import { useState } from 'react'
 import { Link } from 'react-router-dom'
-import { listProjects, getProject, listBuildsForEnv, type Build } from '@/services/api'
+import { listProjects, getProject, listBuildsForEnv, getBuildLog, type Build } from '@/services/api'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
 
 interface EnrichedBuild extends Build {
   project_id: string
@@ -26,7 +28,6 @@ async function fetchAllBuilds(): Promise<EnrichedBuild[]> {
       }
     }
   }
-  // Most-recent first; already sorted by API but resort across envs.
   all.sort((a, b) => (a.started_at < b.started_at ? 1 : -1))
   return all
 }
@@ -43,12 +44,50 @@ function statusVariant(status: string): 'default' | 'destructive' | 'secondary' 
   }
 }
 
+interface LogPanelProps {
+  build: EnrichedBuild
+  onClose: () => void
+}
+
+function LogPanel({ build, onClose }: LogPanelProps) {
+  const { data, isLoading, error } = useQuery({
+    queryKey: ['build-log', build.id],
+    queryFn: () => getBuildLog(build.id),
+  })
+  return (
+    <Card className="mt-4">
+      <CardHeader className="flex flex-row items-center justify-between">
+        <CardTitle className="text-sm">
+          {build.project_name} / {build.branch} — {build.id.slice(0, 8)} ({build.status})
+        </CardTitle>
+        <Button variant="ghost" size="sm" onClick={onClose}>
+          Close
+        </Button>
+      </CardHeader>
+      <CardContent>
+        {isLoading && <div className="text-sm text-muted-foreground">loading log…</div>}
+        {error && (
+          <div className="text-sm text-destructive">
+            {(error as Error).message}
+          </div>
+        )}
+        {data && (
+          <pre className="text-xs font-mono whitespace-pre-wrap bg-muted p-3 rounded max-h-[60vh] overflow-y-auto">
+            {data || '(empty)'}
+          </pre>
+        )}
+      </CardContent>
+    </Card>
+  )
+}
+
 export default function Builds() {
   const { data, isLoading, error } = useQuery({
     queryKey: ['builds', 'all'],
     queryFn: fetchAllBuilds,
     refetchInterval: 10000,
   })
+  const [selected, setSelected] = useState<EnrichedBuild | null>(null)
 
   return (
     <div className="p-6 space-y-4">
@@ -74,6 +113,7 @@ export default function Builds() {
                   <th className="text-left py-2">Status</th>
                   <th className="text-left py-2">Triggered</th>
                   <th className="text-left py-2">Started</th>
+                  <th className="text-left py-2"></th>
                 </tr>
               </thead>
               <tbody>
@@ -91,6 +131,15 @@ export default function Builds() {
                     </td>
                     <td className="py-2 text-xs text-muted-foreground">{b.triggered_by}</td>
                     <td className="py-2 text-xs text-muted-foreground">{b.started_at}</td>
+                    <td className="py-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setSelected(b)}
+                      >
+                        Logs
+                      </Button>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -98,6 +147,8 @@ export default function Builds() {
           )}
         </CardContent>
       </Card>
+
+      {selected && <LogPanel build={selected} onClose={() => setSelected(null)} />}
     </div>
   )
 }
