@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom"
-import { Menu, RefreshCw, Rocket as Box, Search, ChevronRight } from "lucide-react"
+import { Menu, RefreshCw, Rocket as Box, ChevronRight } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import { useUIStore } from "@/stores/ui-store"
@@ -124,24 +124,7 @@ export function Header() {
           ))}
         </nav>
 
-        {/* Live status pill */}
-        <span className="hidden md:inline-flex items-center gap-1.5 rounded-full bg-primary/10 border border-primary/20 px-2.5 py-0.5 text-[11px] font-medium uppercase tracking-wider text-primary">
-          <span className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
-          12 services running
-        </span>
-
         <div className="flex-1" />
-
-        {/* Search hint (desktop) */}
-        <button
-          type="button"
-          className="hidden md:inline-flex items-center gap-2 rounded-md border border-border bg-card px-2.5 py-1 text-[12px] text-muted-foreground hover:bg-secondary transition-colors"
-          title="Search (⌘K)"
-        >
-          <Search className="h-3.5 w-3.5" />
-          <span>Search</span>
-          <kbd className="ml-2 rounded border border-border bg-secondary px-1.5 py-0.5 text-[10px] font-mono">⌘K</kbd>
-        </button>
 
         <div className="flex items-center gap-1">
           <Button
