@@ -146,49 +146,10 @@ func (r *Runner) Build(ctx context.Context, env *models.Environment, b *models.B
 		return r.fail(env, b, "render compose: "+err.Error())
 	}
 
-	// --- Plan 3b/4: parse iac config; provision services + collect hooks ----
-	// Best-effort: missing/unparseable config → continue without service URLs.
-	servicesURLs := map[string]string{} // DATABASE_URL / REDIS_URL — merged into .env below
-	attachPaasNet := false              // toggled true if any service was provisioned
-	var iacCfg *iac.Config              // captured for hook-block use below; nil if absent or parse-failed
-
-	iacPath := filepath.Join(project.LocalPath, ".dev", "config.yaml")
-	if iacBytes, ferr := os.ReadFile(iacPath); ferr != nil {
-		_, _ = log.Write([]byte("==> no .dev/config.yaml — skipping service provisioning + hooks\n"))
-	} else if cfg, perr := iac.Parse(iacBytes); perr != nil {
-		_, _ = log.Write([]byte("WARNING: .dev/config.yaml parse failed; skipping service provisioning + hooks: " + perr.Error() + "\n"))
-	} else {
-		iacCfg = cfg
-		if cfg.Services.Postgres {
-			if r.postgres == nil {
-				_, _ = log.Write([]byte("WARNING: services.postgres declared but provisioner not wired; skipping\n"))
-			} else {
-				_, _ = log.Write([]byte("==> provisioning postgres database\n"))
-				db, perr := r.postgres.EnsureEnvDatabase(ctx, env.ID, project.Name, env.BranchSlug)
-				if perr != nil {
-					_, _ = log.Write([]byte("ERROR: postgres provisioning failed: " + perr.Error() + "\n"))
-					return r.fail(env, b, "postgres provisioning: "+perr.Error())
-				}
-				servicesURLs["DATABASE_URL"] = db.URL
-				attachPaasNet = true
-			}
-		}
-		if cfg.Services.Redis {
-			if r.redis == nil {
-				_, _ = log.Write([]byte("WARNING: services.redis declared but provisioner not wired; skipping\n"))
-			} else {
-				_, _ = log.Write([]byte("==> provisioning redis ACL\n"))
-				acl, perr := r.redis.EnsureEnvACL(ctx, env.ID, project.Name, env.BranchSlug)
-				if perr != nil {
-					_, _ = log.Write([]byte("ERROR: redis provisioning failed: " + perr.Error() + "\n"))
-					return r.fail(env, b, "redis provisioning: "+perr.Error())
-				}
-				servicesURLs["REDIS_URL"] = acl.URL
-				attachPaasNet = true
-			}
-		}
+	iacCfg, servicesURLs, attachPaasNet, err := r.provisionServices(ctx, env, project, log)
+	if err != nil {
+		return r.fail(env, b, err.Error())
 	}
-	// ------------------------------------------------------------------------
 
 	// Write secrets to <project.LocalPath>/.env so docker compose's env_file:
 	// references in the user's compose pick them up. Project-scoped (shared
@@ -329,36 +290,7 @@ func (r *Runner) Teardown(ctx context.Context, env *models.Environment) error {
 	envDir := filepath.Join(r.dataDir, "envs", env.ID)
 	composePath := filepath.Join(envDir, "docker-compose.yaml")
 
-	// --- Plan 3b: drop services + clean cred-store entries -----------------
-	// Best-effort. Failures are logged but don't abort directory cleanup.
-	project, err := r.store.GetProject(env.ProjectID)
-	if err == nil {
-		iacPath := filepath.Join(project.LocalPath, ".dev", "config.yaml")
-		if iacBytes, ferr := os.ReadFile(iacPath); ferr == nil {
-			if cfg, perr := iac.Parse(iacBytes); perr == nil {
-				if cfg.Services.Postgres && r.postgres != nil {
-					if derr := r.postgres.DropEnvDatabase(ctx, project.Name, env.BranchSlug); derr != nil {
-						r.logger.Warn("DropEnvDatabase failed",
-							zap.String("env_id", env.ID), zap.Error(derr))
-					}
-				}
-				if cfg.Services.Redis && r.redis != nil {
-					if derr := r.redis.DropEnvACL(ctx, project.Name, env.BranchSlug); derr != nil {
-						r.logger.Warn("DropEnvACL failed",
-							zap.String("env_id", env.ID), zap.Error(derr))
-					}
-				}
-			}
-		}
-	}
-	// Remove per-env cred-store password entries unconditionally — safe even
-	// when the keys never existed (DeleteProjectSecret returns ErrNotFound,
-	// which we ignore).
-	if r.credStore != nil {
-		_ = r.credStore.DeleteProjectSecret(env.ID, "db_password")
-		_ = r.credStore.DeleteProjectSecret(env.ID, "redis_password")
-	}
-	// ----------------------------------------------------------------------
+	r.teardownServices(ctx, env)
 
 	// If the rendered compose exists, run docker compose down -v to remove
 	// containers + named volumes. If it doesn't exist (env never built),
@@ -385,6 +317,98 @@ func (r *Runner) Teardown(ctx context.Context, env *models.Environment) error {
 	}
 
 	return nil
+}
+
+// provisionServices parses the project's .dev/config.yaml and provisions any
+// declared paas-postgres / paas-redis resources, returning:
+//
+//   - iacCfg: the parsed config (nil when absent or unparseable — best-effort)
+//   - servicesURLs: DATABASE_URL / REDIS_URL keyed pairs to merge into .env
+//   - attachPaasNet: true when at least one service was provisioned (compose
+//     should attach paas-net so the app can resolve singleton hostnames)
+//   - err: only set when a provisioner call failed; nil on benign skips
+//
+// Pulled out of Runner.Build so the build pipeline reads as a checklist.
+func (r *Runner) provisionServices(ctx context.Context, env *models.Environment, project *models.Project, log io.Writer) (*iac.Config, map[string]string, bool, error) {
+	servicesURLs := map[string]string{}
+	attachPaasNet := false
+
+	iacPath := filepath.Join(project.LocalPath, ".dev", "config.yaml")
+	iacBytes, ferr := os.ReadFile(iacPath)
+	if ferr != nil {
+		_, _ = log.Write([]byte("==> no .dev/config.yaml — skipping service provisioning + hooks\n"))
+		return nil, servicesURLs, attachPaasNet, nil
+	}
+	cfg, perr := iac.Parse(iacBytes)
+	if perr != nil {
+		_, _ = log.Write([]byte("WARNING: .dev/config.yaml parse failed; skipping service provisioning + hooks: " + perr.Error() + "\n"))
+		return nil, servicesURLs, attachPaasNet, nil
+	}
+
+	if cfg.Services.Postgres {
+		if r.postgres == nil {
+			_, _ = log.Write([]byte("WARNING: services.postgres declared but provisioner not wired; skipping\n"))
+		} else {
+			_, _ = log.Write([]byte("==> provisioning postgres database\n"))
+			db, eerr := r.postgres.EnsureEnvDatabase(ctx, env.ID, project.Name, env.BranchSlug)
+			if eerr != nil {
+				_, _ = log.Write([]byte("ERROR: postgres provisioning failed: " + eerr.Error() + "\n"))
+				return cfg, servicesURLs, attachPaasNet, fmt.Errorf("postgres provisioning: %w", eerr)
+			}
+			servicesURLs["DATABASE_URL"] = db.URL
+			attachPaasNet = true
+		}
+	}
+	if cfg.Services.Redis {
+		if r.redis == nil {
+			_, _ = log.Write([]byte("WARNING: services.redis declared but provisioner not wired; skipping\n"))
+		} else {
+			_, _ = log.Write([]byte("==> provisioning redis ACL\n"))
+			acl, eerr := r.redis.EnsureEnvACL(ctx, env.ID, project.Name, env.BranchSlug)
+			if eerr != nil {
+				_, _ = log.Write([]byte("ERROR: redis provisioning failed: " + eerr.Error() + "\n"))
+				return cfg, servicesURLs, attachPaasNet, fmt.Errorf("redis provisioning: %w", eerr)
+			}
+			servicesURLs["REDIS_URL"] = acl.URL
+			attachPaasNet = true
+		}
+	}
+	return cfg, servicesURLs, attachPaasNet, nil
+}
+
+// teardownServices drops the env's per-service resources (postgres DB + user,
+// redis ACL) and removes the per-env credential-store password entries.
+//
+// Best-effort: each step logs on failure but never returns an error. The
+// caller's directory cleanup runs regardless.
+func (r *Runner) teardownServices(ctx context.Context, env *models.Environment) {
+	project, gerr := r.store.GetProject(env.ProjectID)
+	if gerr == nil {
+		iacPath := filepath.Join(project.LocalPath, ".dev", "config.yaml")
+		if iacBytes, ferr := os.ReadFile(iacPath); ferr == nil {
+			if cfg, perr := iac.Parse(iacBytes); perr == nil {
+				if cfg.Services.Postgres && r.postgres != nil {
+					if derr := r.postgres.DropEnvDatabase(ctx, project.Name, env.BranchSlug); derr != nil {
+						r.logger.Warn("DropEnvDatabase failed",
+							zap.String("env_id", env.ID), zap.Error(derr))
+					}
+				}
+				if cfg.Services.Redis && r.redis != nil {
+					if derr := r.redis.DropEnvACL(ctx, project.Name, env.BranchSlug); derr != nil {
+						r.logger.Warn("DropEnvACL failed",
+							zap.String("env_id", env.ID), zap.Error(derr))
+					}
+				}
+			}
+		}
+	}
+	// Remove per-env cred-store password entries unconditionally — safe even
+	// when the keys never existed (DeleteProjectSecret returns ErrNotFound,
+	// which we ignore).
+	if r.credStore != nil {
+		_ = r.credStore.DeleteProjectSecret(env.ID, "db_password")
+		_ = r.credStore.DeleteProjectSecret(env.ID, "redis_password")
+	}
 }
 
 // newHookExecutor constructs a hooks.Executor for the given build context.
