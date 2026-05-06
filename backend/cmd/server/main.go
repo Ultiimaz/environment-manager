@@ -176,6 +176,7 @@ func main() {
 		BaseDomain:       cfg.BaseDomain,
 		Logger:           logger,
 		DockerClient:     dockerCli,
+		DockerLogStream:  dockerCli,
 		LetsencryptEmail: cfg.LetsencryptEmail,
 		Version:          version,
 	})

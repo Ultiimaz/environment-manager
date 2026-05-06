@@ -4,6 +4,7 @@ import {
   Rocket,
   Hammer,
   Database,
+  Network,
   Settings,
   ChevronLeft,
   ChevronRight,
@@ -25,6 +26,7 @@ const navItems: NavItem[] = [
   { title: "Projects", href: "/projects", icon: Rocket },
   { title: "Builds", href: "/builds", icon: Hammer },
   { title: "Services", href: "/services", icon: Database },
+  { title: "Topology", href: "/topology", icon: Network },
   { title: "Settings", href: "/settings", icon: Settings },
 ]
 
@@ -99,13 +101,6 @@ export function Sidebar() {
           </ul>
         </nav>
 
-        <div className="p-4 border-t border-border">
-          {!sidebarCollapsed && (
-            <p className="text-xs text-muted-foreground">
-              Environment Manager v1.0
-            </p>
-          )}
-        </div>
       </aside>
     </TooltipProvider>
   )

@@ -2,10 +2,20 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { ArrowLeft, RefreshCw, Play, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Section } from '@/components/ui/section'
+import { Badge } from '@/components/ui/badge'
 import { getProject, triggerBuild } from '@/services/api'
 import type { ProjectDetail, Environment } from '@/services/api'
 import { BuildLogViewer } from '@/components/projects/build-log-viewer'
+
+function envStatusVariant(status: string): 'success' | 'failed' | 'pending' | 'default' {
+  switch (status) {
+    case 'running': return 'success'
+    case 'failed': return 'failed'
+    case 'building': return 'pending'
+    default: return 'default'
+  }
+}
 
 export default function ProjectDetailPage() {
   const { id } = useParams<{ id: string }>()
@@ -51,8 +61,8 @@ export default function ProjectDetailPage() {
     }
   }
 
-  if (error) return <div className="p-6 text-destructive">{error}</div>
-  if (!data) return <div className="p-6">Loading...</div>
+  if (error) return <div className="p-6 text-sm text-red-400">{error}</div>
+  if (!data) return <div className="p-6 text-sm text-muted-foreground">Loading…</div>
 
   const { project, environments } = data
   const sortedEnvs = [...environments].sort((a, b) => {
@@ -62,101 +72,106 @@ export default function ProjectDetailPage() {
   })
 
   return (
-    <div className="p-6">
-      <Link to="/projects" className="inline-flex items-center text-sm text-muted-foreground mb-4">
-        <ArrowLeft className="h-4 w-4 mr-1" /> Projects
+    <div className="p-6 space-y-4 max-w-5xl">
+      <Link to="/projects" className="inline-flex items-center text-xs text-muted-foreground hover:text-foreground transition-colors">
+        <ArrowLeft className="h-3 w-3 mr-1" /> Projects
       </Link>
-      <div className="flex items-center justify-between mb-6">
-        <div>
-          <h1 className="text-2xl font-bold">{project.name}</h1>
-          <p className="text-muted-foreground text-sm">{project.repo_url}</p>
-          <p className="text-muted-foreground text-sm">default: {project.default_branch}</p>
-        </div>
-        <Button variant="outline" onClick={load}>
-          <RefreshCw className="h-4 w-4 mr-2" /> Refresh
-        </Button>
-      </div>
 
-      <h2 className="text-lg font-semibold mb-3">Environments</h2>
-      <div className="grid gap-3 mb-6">
-        {sortedEnvs.map(e => (
-          <EnvCard
-            key={e.id}
-            env={e}
-            triggering={triggering === e.id}
-            onBuild={() => onBuild(e.id)}
-            onShowLog={() => setLogEnvId(e.id)}
-          />
-        ))}
-      </div>
+      <header className="flex items-start justify-between">
+        <div>
+          <h1 className="text-xl font-semibold">{project.name}</h1>
+          <p className="text-xs text-muted-foreground font-mono">{project.repo_url}</p>
+          <p className="text-xs text-muted-foreground">default: {project.default_branch}</p>
+        </div>
+        <Button variant="outline" size="sm" onClick={load}>
+          <RefreshCw className="h-4 w-4 mr-1.5" /> Refresh
+        </Button>
+      </header>
+
+      <Section
+        title={`Environments (${sortedEnvs.length})`}
+        flush
+      >
+        <ul className="divide-y divide-border -mx-4 -mb-1">
+          {sortedEnvs.map(e => (
+            <EnvRow
+              key={e.id}
+              env={e}
+              projectId={project.id}
+              triggering={triggering === e.id}
+              onBuild={() => onBuild(e.id)}
+              onShowLog={() => setLogEnvId(e.id)}
+            />
+          ))}
+        </ul>
+      </Section>
 
       {logEnvId && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center justify-between">
-              <span>Build log: {logEnvId}</span>
-              <Button variant="ghost" size="sm" onClick={() => setLogEnvId(null)}>
-                Close
-              </Button>
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            <BuildLogViewer envId={logEnvId} />
-          </CardContent>
-        </Card>
+        <Section
+          title={
+            <span className="font-mono text-xs">Build log · {logEnvId}</span>
+          }
+          action={
+            <Button variant="ghost" size="sm" onClick={() => setLogEnvId(null)}>
+              Close
+            </Button>
+          }
+        >
+          <BuildLogViewer envId={logEnvId} />
+        </Section>
       )}
     </div>
   )
 }
 
-function EnvCard({
-  env, triggering, onBuild, onShowLog,
-}: {
+interface EnvRowProps {
   env: Environment
+  projectId: string
   triggering: boolean
   onBuild: () => void
   onShowLog: () => void
-}) {
-  const statusColor = {
-    pending: 'text-muted-foreground',
-    building: 'text-blue-500',
-    running: 'text-green-500',
-    failed: 'text-destructive',
-    destroying: 'text-orange-500',
-  }[env.status] || 'text-muted-foreground'
+}
 
+function EnvRow({ env, projectId, triggering, onBuild, onShowLog }: EnvRowProps) {
   return (
-    <Card>
-      <CardContent className="pt-6">
-        <div className="flex items-center justify-between gap-4">
-          <div className="flex-1 min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <span className="font-medium truncate">{env.branch}</span>
-              <span className="text-xs px-2 py-0.5 rounded bg-secondary">{env.kind}</span>
-              <span className={`text-xs ${statusColor}`}>{env.status}</span>
-            </div>
-            {env.url && (
-              <a
-                href={`http://${env.url}`}
-                target="_blank"
-                rel="noreferrer"
-                className="text-sm text-primary inline-flex items-center gap-1"
-              >
-                {env.url} <ExternalLink className="h-3 w-3" />
-              </a>
-            )}
-          </div>
-          <div className="flex gap-2 shrink-0">
-            <Button variant="outline" size="sm" onClick={onShowLog}>
-              Logs
-            </Button>
-            <Button size="sm" onClick={onBuild} disabled={triggering || env.status === 'building'}>
-              <Play className="h-3 w-3 mr-1" />
-              {triggering ? 'Starting...' : env.status === 'building' ? 'Building...' : 'Build'}
-            </Button>
-          </div>
+    <div className="flex items-center justify-between gap-4 px-4 py-3 hover:bg-muted/40 transition-colors">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2 mb-1">
+          <Link
+            to={`/projects/${projectId}/envs/${env.id}`}
+            className="text-sm font-medium truncate hover:text-primary transition-colors"
+          >
+            {env.branch}
+          </Link>
+          <Badge variant="default">{env.kind}</Badge>
+          <Badge variant={envStatusVariant(env.status)}>{env.status}</Badge>
         </div>
-      </CardContent>
-    </Card>
+        {env.url && (
+          <a
+            href={`http://${env.url}`}
+            target="_blank"
+            rel="noreferrer"
+            onClick={(e) => e.stopPropagation()}
+            className="text-xs text-muted-foreground font-mono inline-flex items-center gap-1 hover:text-foreground transition-colors"
+          >
+            {env.url} <ExternalLink className="h-3 w-3" />
+          </a>
+        )}
+      </div>
+      <div className="flex gap-2 shrink-0">
+        <Button variant="ghost" size="sm" className="text-xs h-7" onClick={onShowLog}>
+          Build log
+        </Button>
+        <Button
+          size="sm"
+          className="text-xs h-7"
+          onClick={onBuild}
+          disabled={triggering || env.status === 'building'}
+        >
+          <Play className="h-3 w-3 mr-1" />
+          {triggering ? 'Starting…' : env.status === 'building' ? 'Building…' : 'Build'}
+        </Button>
+      </div>
+    </div>
   )
 }

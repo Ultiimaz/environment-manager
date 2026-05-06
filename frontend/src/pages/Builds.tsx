@@ -2,7 +2,7 @@ import { useQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { listProjects, getProject, listBuildsForEnv, getBuildLog, type Build } from '@/services/api'
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { Section } from '@/components/ui/section'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 
@@ -24,7 +24,7 @@ async function fetchAllBuilds(): Promise<EnrichedBuild[]> {
           all.push({ ...b, project_id: p.id, project_name: p.name, branch: env.branch })
         }
       } catch {
-        // Skip envs whose build list errors; continue aggregating.
+        // skip
       }
     }
   }
@@ -32,16 +32,24 @@ async function fetchAllBuilds(): Promise<EnrichedBuild[]> {
   return all
 }
 
-function statusVariant(status: string): 'default' | 'destructive' | 'secondary' {
+function statusVariant(status: string): 'success' | 'failed' | 'pending' | 'default' {
   switch (status) {
-    case 'success':
-      return 'default'
+    case 'success': return 'success'
     case 'failed':
-    case 'cancelled':
-      return 'destructive'
-    default:
-      return 'secondary'
+    case 'cancelled': return 'failed'
+    case 'running': return 'pending'
+    default: return 'default'
   }
+}
+
+function relativeTime(iso: string): string {
+  const dt = new Date(iso).getTime()
+  const now = Date.now()
+  const sec = Math.floor((now - dt) / 1000)
+  if (sec < 60) return `${sec}s ago`
+  if (sec < 3600) return `${Math.floor(sec / 60)}m ago`
+  if (sec < 86400) return `${Math.floor(sec / 3600)}h ago`
+  return `${Math.floor(sec / 86400)}d ago`
 }
 
 interface LogPanelProps {
@@ -55,29 +63,26 @@ function LogPanel({ build, onClose }: LogPanelProps) {
     queryFn: () => getBuildLog(build.id),
   })
   return (
-    <Card className="mt-4">
-      <CardHeader className="flex flex-row items-center justify-between">
-        <CardTitle className="text-sm">
-          {build.project_name} / {build.branch} — {build.id.slice(0, 8)} ({build.status})
-        </CardTitle>
-        <Button variant="ghost" size="sm" onClick={onClose}>
-          Close
-        </Button>
-      </CardHeader>
-      <CardContent>
-        {isLoading && <div className="text-sm text-muted-foreground">loading log…</div>}
-        {error && (
-          <div className="text-sm text-destructive">
-            {(error as Error).message}
-          </div>
-        )}
-        {data && (
-          <pre className="text-xs font-mono whitespace-pre-wrap bg-muted p-3 rounded max-h-[60vh] overflow-y-auto">
-            {data || '(empty)'}
-          </pre>
-        )}
-      </CardContent>
-    </Card>
+    <Section
+      title={
+        <span className="font-mono text-xs">
+          {build.project_name} / {build.branch} · {build.id.slice(0, 8)} · {build.status}
+        </span>
+      }
+      action={<Button variant="ghost" size="sm" onClick={onClose}>Close</Button>}
+    >
+      {isLoading && <div className="text-xs text-muted-foreground">loading log…</div>}
+      {error && (
+        <div className="text-xs text-red-400">
+          {(error as Error).message}
+        </div>
+      )}
+      {data && (
+        <pre className="text-xs font-mono whitespace-pre-wrap bg-background border border-border p-3 rounded max-h-[60vh] overflow-y-auto">
+          {data || '(empty)'}
+        </pre>
+      )}
+    </Section>
   )
 }
 
@@ -90,63 +95,65 @@ export default function Builds() {
   const [selected, setSelected] = useState<EnrichedBuild | null>(null)
 
   return (
-    <div className="p-6 space-y-4">
-      <h1 className="text-2xl font-bold">Builds</h1>
+    <div className="p-6 space-y-4 max-w-6xl">
+      <header>
+        <h1 className="text-xl font-semibold">Builds</h1>
+        <p className="text-sm text-muted-foreground">Recent build history across all projects.</p>
+      </header>
 
-      <Card>
-        <CardHeader>
-          <CardTitle>Recent builds</CardTitle>
-        </CardHeader>
-        <CardContent>
-          {isLoading && <div className="text-sm text-muted-foreground">loading…</div>}
-          {error && <div className="text-sm text-destructive">{(error as Error).message}</div>}
-          {data && data.length === 0 && (
-            <div className="text-sm text-muted-foreground">No builds yet.</div>
-          )}
-          {data && data.length > 0 && (
-            <table className="w-full text-sm">
-              <thead className="text-xs text-muted-foreground">
-                <tr className="border-b">
-                  <th className="text-left py-2">Project</th>
-                  <th className="text-left py-2">Branch</th>
-                  <th className="text-left py-2">SHA</th>
-                  <th className="text-left py-2">Status</th>
-                  <th className="text-left py-2">Triggered</th>
-                  <th className="text-left py-2">Started</th>
-                  <th className="text-left py-2"></th>
+      <Section flush>
+        {isLoading && <div className="text-sm text-muted-foreground p-4">loading…</div>}
+        {error && <div className="text-sm text-red-400 p-4">{(error as Error).message}</div>}
+        {data && data.length === 0 && (
+          <div className="text-sm text-muted-foreground p-4">No builds yet.</div>
+        )}
+        {data && data.length > 0 && (
+          <table className="w-full text-xs">
+            <thead className="text-[11px] text-muted-foreground uppercase tracking-wider">
+              <tr className="border-b border-border">
+                <th className="text-left py-2.5 px-1 font-medium">Project</th>
+                <th className="text-left py-2.5 px-1 font-medium">Branch</th>
+                <th className="text-left py-2.5 px-1 font-medium">SHA</th>
+                <th className="text-left py-2.5 px-1 font-medium">Status</th>
+                <th className="text-left py-2.5 px-1 font-medium">Trigger</th>
+                <th className="text-left py-2.5 px-1 font-medium tabular-nums">Started</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {data.slice(0, 50).map((b) => (
+                <tr
+                  key={`${b.env_id}-${b.id}`}
+                  className="border-b border-border last:border-0 hover:bg-muted/40"
+                >
+                  <td className="py-2.5 px-1">
+                    <Link to={`/projects/${b.project_id}`} className="font-medium hover:text-primary transition-colors">
+                      {b.project_name}
+                    </Link>
+                  </td>
+                  <td className="py-2.5 px-1 text-muted-foreground font-mono">{b.branch}</td>
+                  <td className="py-2.5 px-1 font-mono text-muted-foreground">{b.sha?.slice(0, 7) || '—'}</td>
+                  <td className="py-2.5 px-1">
+                    <Badge variant={statusVariant(b.status)}>{b.status}</Badge>
+                  </td>
+                  <td className="py-2.5 px-1 text-muted-foreground">{b.triggered_by}</td>
+                  <td className="py-2.5 px-1 text-muted-foreground tabular-nums">{relativeTime(b.started_at)}</td>
+                  <td className="py-2.5 px-1">
+                    <Button
+                      variant="ghost"
+                      size="sm"
+                      className="text-xs h-7"
+                      onClick={() => setSelected(b)}
+                    >
+                      Logs
+                    </Button>
+                  </td>
                 </tr>
-              </thead>
-              <tbody>
-                {data.slice(0, 50).map((b) => (
-                  <tr key={`${b.env_id}-${b.id}`} className="border-b last:border-0">
-                    <td className="py-2">
-                      <Link to={`/projects/${b.project_id}`} className="hover:underline font-medium">
-                        {b.project_name}
-                      </Link>
-                    </td>
-                    <td className="py-2 text-muted-foreground">{b.branch}</td>
-                    <td className="py-2 font-mono text-xs">{b.sha?.slice(0, 7) || '—'}</td>
-                    <td className="py-2">
-                      <Badge variant={statusVariant(b.status)}>{b.status}</Badge>
-                    </td>
-                    <td className="py-2 text-xs text-muted-foreground">{b.triggered_by}</td>
-                    <td className="py-2 text-xs text-muted-foreground">{b.started_at}</td>
-                    <td className="py-2">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setSelected(b)}
-                      >
-                        Logs
-                      </Button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          )}
-        </CardContent>
-      </Card>
+              ))}
+            </tbody>
+          </table>
+        )}
+      </Section>
 
       {selected && <LogPanel build={selected} onClose={() => setSelected(null)} />}
     </div>

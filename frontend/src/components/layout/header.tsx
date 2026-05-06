@@ -1,18 +1,9 @@
 import { Link, useLocation } from "react-router-dom"
-import { Menu, Bell, RefreshCw, GitBranch, Rocket as Box } from "lucide-react"
+import { Menu, RefreshCw, Rocket as Box } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet"
-import {
-  DropdownMenu,
-  DropdownMenuContent,
-  DropdownMenuItem,
-  DropdownMenuLabel,
-  DropdownMenuSeparator,
-  DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu"
-import { Badge } from "@/components/ui/badge"
 import { useUIStore } from "@/stores/ui-store"
-import { Home, Rocket, Hammer, Database, Settings as SettingsIcon } from "lucide-react"
+import { Home, Rocket, Hammer, Database, Network, Settings as SettingsIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navItems = [
@@ -20,6 +11,7 @@ const navItems = [
   { title: "Projects", href: "/projects", icon: Rocket },
   { title: "Builds", href: "/builds", icon: Hammer },
   { title: "Services", href: "/services", icon: Database },
+  { title: "Topology", href: "/topology", icon: Network },
   { title: "Settings", href: "/settings", icon: SettingsIcon },
 ]
 
@@ -90,56 +82,14 @@ export function Header() {
         <div className="flex-1" />
 
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" title="Refresh">
+          <Button
+            variant="ghost"
+            size="icon"
+            title="Refresh"
+            onClick={() => window.location.reload()}
+          >
             <RefreshCw className="h-4 w-4" />
           </Button>
-
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button variant="ghost" size="icon" className="relative">
-                <Bell className="h-4 w-4" />
-                <Badge
-                  variant="destructive"
-                  className="absolute -top-1 -right-1 h-4 w-4 p-0 flex items-center justify-center text-[10px]"
-                >
-                  3
-                </Badge>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-80">
-              <DropdownMenuLabel>Notifications</DropdownMenuLabel>
-              <DropdownMenuSeparator />
-              <DropdownMenuItem>
-                <div className="flex flex-col gap-1">
-                  <span className="font-medium">Container stopped</span>
-                  <span className="text-xs text-muted-foreground">
-                    nginx-proxy exited with code 0
-                  </span>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <div className="flex flex-col gap-1">
-                  <span className="font-medium">Git sync completed</span>
-                  <span className="text-xs text-muted-foreground">
-                    Pulled 3 new commits from origin/main
-                  </span>
-                </div>
-              </DropdownMenuItem>
-              <DropdownMenuItem>
-                <div className="flex flex-col gap-1">
-                  <span className="font-medium">High memory usage</span>
-                  <span className="text-xs text-muted-foreground">
-                    postgres container using 85% memory
-                  </span>
-                </div>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-
-          <Badge variant="outline" className="hidden sm:flex gap-1 text-xs">
-            <GitBranch className="h-3 w-3" />
-            main
-          </Badge>
         </div>
       </div>
     </header>

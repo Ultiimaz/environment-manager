@@ -30,7 +30,8 @@ type RouterConfig struct {
 	DataDir          string
 	BaseDomain       string
 	Logger           *zap.Logger
-	DockerClient     handlers.ContainerInspector // nil = services endpoints return exists=false
+	DockerClient     handlers.ContainerInspector  // nil = services endpoints return exists=false
+	DockerLogStream  handlers.RuntimeLogStreamer  // nil = runtime-logs endpoints return 503
 	LetsencryptEmail string
 	Version          string
 }
@@ -63,6 +64,8 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	envsHandler := handlers.NewEnvsHandler(cfg.ProjectsStore, cfg.Builder, cfg.CredentialStore, cfg.Logger)
 	servicesHandler := handlers.NewServicesHandler(cfg.DockerClient)
 	settingsHandler := handlers.NewSettingsHandler(cfg.LetsencryptEmail, cfg.CredentialStore != nil, cfg.Version)
+	topologyHandler := handlers.NewTopologyHandler(cfg.ProjectsStore, cfg.DockerClient)
+	runtimeLogsHandler := handlers.NewRuntimeLogsHandler(cfg.DockerLogStream, cfg.ProjectsStore, cfg.Logger)
 
 	// API routes
 	r.Route("/api/v1", func(r chi.Router) {
@@ -81,6 +84,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		r.Get("/services/postgres", servicesHandler.Postgres)
 		r.Get("/services/redis", servicesHandler.Redis)
 		r.Get("/settings", settingsHandler.Get)
+		r.Get("/topology", topologyHandler.Get)
 
 		// Mutating endpoints — require admin token. Bearer middleware skipped
 		// when credStore is nil (early-boot / no-key dev mode); in that mode
@@ -103,6 +107,8 @@ func NewRouter(cfg RouterConfig) http.Handler {
 
 	// WebSocket routes
 	r.Get("/ws/envs/{id}/build-logs", buildsHandler.StreamLogs)
+	r.Get("/ws/envs/{id}/runtime-logs", runtimeLogsHandler.StreamEnv)
+	r.Get("/ws/services/{name}/runtime-logs", runtimeLogsHandler.StreamService)
 
 	// Static files (frontend)
 	fileServer := http.FileServer(http.Dir(cfg.StaticDir))
