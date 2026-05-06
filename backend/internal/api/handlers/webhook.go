@@ -12,6 +12,7 @@ import (
 	"go.uber.org/zap"
 
 	"github.com/environment-manager/backend/internal/builder"
+	"github.com/environment-manager/backend/internal/credentials"
 	"github.com/environment-manager/backend/internal/models"
 	"github.com/environment-manager/backend/internal/projects"
 )
@@ -21,6 +22,7 @@ import (
 type WebhookHandler struct {
 	projectsStore *projects.Store
 	runner        *builder.Runner
+	credStore     *credentials.Store // optional; if set, used for git fetch auth
 	logger        *zap.Logger
 }
 
@@ -36,6 +38,24 @@ func (h *WebhookHandler) SetProjectsStore(s *projects.Store) { h.projectsStore =
 
 // SetRunner wires the build runner.
 func (h *WebhookHandler) SetRunner(r *builder.Runner) { h.runner = r }
+
+// SetCredentialStore wires the credential store, used to look up the GitHub
+// PAT (under the __provider:github slot) for `git fetch` auth on private
+// repos. Optional — handler still works without it for public repos.
+func (h *WebhookHandler) SetCredentialStore(s *credentials.Store) { h.credStore = s }
+
+// gitToken returns the stored GitHub PAT for git fetch auth, or "" when
+// unavailable.
+func (h *WebhookHandler) gitToken() string {
+	if h.credStore == nil {
+		return ""
+	}
+	tok, err := h.credStore.GetGlobalToken("github")
+	if err != nil {
+		return ""
+	}
+	return tok
+}
 
 // GitHub handles POST /api/v1/webhook/github for both push and delete events.
 // X-GitHub-Event header determines which payload shape to expect.
@@ -85,7 +105,7 @@ func (h *WebhookHandler) processProjectPush(repoURL, ref, headSHA string) string
 		return "" // unknown repo
 	}
 
-	if out, err := projects.FetchOrigin(project.LocalPath); err != nil {
+	if out, err := projects.FetchOrigin(project.LocalPath, h.gitToken()); err != nil {
 		h.logger.Warn("git fetch failed",
 			zap.String("repo", project.LocalPath),
 			zap.Error(err),

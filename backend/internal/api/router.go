@@ -57,6 +57,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 	webhookHandler := handlers.NewWebhookHandler(cfg.Logger)
 	webhookHandler.SetProjectsStore(cfg.ProjectsStore)
 	webhookHandler.SetRunner(cfg.Builder)
+	webhookHandler.SetCredentialStore(cfg.CredentialStore)
 	projectsHandler := handlers.NewProjectsHandler(cfg.ProjectsStore, cfg.ReposManager, cfg.CredentialStore, cfg.BaseDomain, cfg.Logger, cfg.Builder)
 	buildsHandler := handlers.NewBuildsHandler(cfg.ProjectsStore, cfg.Builder, cfg.DataDir, cfg.Logger)
 	envsHandler := handlers.NewEnvsHandler(cfg.ProjectsStore, cfg.Builder, cfg.CredentialStore, cfg.Logger)
