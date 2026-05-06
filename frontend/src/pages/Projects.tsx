@@ -4,7 +4,7 @@ import { Plus, GitBranch, AlertCircle } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { getProjects } from '@/services/api'
+import { listProjects } from '@/services/api'
 import type { Project } from '@/types'
 import { AddProjectModal } from '@/components/projects/add-project-modal'
 
@@ -17,8 +17,8 @@ export default function Projects() {
   async function load() {
     try {
       setError(null)
-      const list = await getProjects()
-      setProjects(list)
+      const list = await listProjects()
+      setProjects(list as Project[])
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Failed to load projects'
       setError(msg)

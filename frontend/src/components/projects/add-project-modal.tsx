@@ -26,10 +26,7 @@ export function AddProjectModal({ open, onClose, onCreated }: Props) {
     setSubmitting(true)
     setError(null)
     try {
-      const result = await createProject({
-        repo_url: repoUrl.trim(),
-        token: token.trim() || undefined,
-      })
+      const result = await createProject(repoUrl.trim(), token.trim() || undefined)
       onCreated()
       onClose()
       setRepoUrl('')

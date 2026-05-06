@@ -4,7 +4,7 @@ import { ArrowLeft, RefreshCw, Play, ExternalLink } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { getProject, triggerBuild } from '@/services/api'
-import type { ProjectDetail, Environment } from '@/types'
+import type { ProjectDetail, Environment } from '@/services/api'
 import { BuildLogViewer } from '@/components/projects/build-log-viewer'
 
 export default function ProjectDetailPage() {

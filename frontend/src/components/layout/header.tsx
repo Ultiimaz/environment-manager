@@ -1,5 +1,5 @@
 import { Link, useLocation } from "react-router-dom"
-import { Menu, Bell, RefreshCw, GitBranch } from "lucide-react"
+import { Menu, Bell, RefreshCw, GitBranch, Rocket as Box } from "lucide-react"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetTrigger, SheetTitle, SheetDescription } from "@/components/ui/sheet"
 import {
@@ -12,24 +12,15 @@ import {
 } from "@/components/ui/dropdown-menu"
 import { Badge } from "@/components/ui/badge"
 import { useUIStore } from "@/stores/ui-store"
-import {
-  LayoutDashboard,
-  Box,
-  HardDrive,
-  Layers,
-  Network,
-  Settings,
-} from "lucide-react"
+import { Home, Rocket, Hammer, Database, Settings as SettingsIcon } from "lucide-react"
 import { cn } from "@/lib/utils"
 
 const navItems = [
-  { title: "Dashboard", href: "/", icon: LayoutDashboard },
-  { title: "Containers", href: "/containers", icon: Box },
-  { title: "Volumes", href: "/volumes", icon: HardDrive },
-  { title: "Compose", href: "/compose", icon: Layers },
-  { title: "Network", href: "/network", icon: Network },
-  { title: "Git", href: "/git", icon: GitBranch },
-  { title: "Settings", href: "/settings", icon: Settings },
+  { title: "Home", href: "/", icon: Home },
+  { title: "Projects", href: "/projects", icon: Rocket },
+  { title: "Builds", href: "/builds", icon: Hammer },
+  { title: "Services", href: "/services", icon: Database },
+  { title: "Settings", href: "/settings", icon: SettingsIcon },
 ]
 
 export function Header() {
