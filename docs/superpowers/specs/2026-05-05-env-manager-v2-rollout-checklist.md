@@ -109,7 +109,20 @@ After merge + redeploy:
 - [ ] `envm services status` shows paas-postgres + paas-redis
 
 ## Plan 7 — UI rebuild
-*(populated when plan 7 is written)*
+
+After merge + redeploy:
+- [ ] `cd frontend && pnpm build` — clean
+- [ ] env-manager UI loads at the LAN address; sidebar shows: Home / Projects / Builds / Services / Settings (5 items)
+- [ ] Mobile header nav (hamburger menu) matches the sidebar's 5 items
+- [ ] Home page shows version, paas-postgres + paas-redis status, projects list
+- [ ] Projects page lists existing projects
+- [ ] Builds page shows builds across all projects (refreshes every 10s)
+- [ ] Services page shows postgres + redis cards with running/stopped/absent badges
+- [ ] Settings page lets operator paste admin token; token persists in localStorage; mask shows when saved
+- [ ] Settings page shows version, LETSENCRYPT_EMAIL presence, credential-store presence
+- [ ] After saving a token, attempting to delete a project via UI succeeds (uses Bearer header)
+- [ ] Without a token saved, mutating actions fail visibly with 401
+- [ ] Legacy routes (/repos, /containers, /volumes, /network, /compose) return 404 in browser
 
 ## Plan 8 — Migration runbook
 *(populated when plan 8 is written)*
