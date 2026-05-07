@@ -3,6 +3,7 @@ package api
 import (
 	"net/http"
 	"path/filepath"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
@@ -140,15 +141,36 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		r.Get("/ws/services/{name}/runtime-logs", runtimeLogsHandler.StreamService)
 	})
 
-	// Static files (frontend)
+	// Static files (frontend). Cache-control matters here — without it
+	// browsers cache index.html aggressively and customers see stale UI
+	// after every deploy. Vite emits hashed asset filenames (e.g.
+	// index-abcd1234.js) so those are content-addressed and safe to
+	// cache forever; index.html itself must NOT be cached or the browser
+	// will keep loading the old asset bundle even after a redeploy.
 	fileServer := http.FileServer(http.Dir(cfg.StaticDir))
 	r.Handle("/*", http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if _, err := http.Dir(cfg.StaticDir).Open(r.URL.Path); err != nil {
+			// SPA fallback: index.html for any unknown path.
+			w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 			http.ServeFile(w, r, filepath.Join(cfg.StaticDir, "index.html"))
 			return
 		}
+		setStaticCacheHeaders(w, r.URL.Path)
 		fileServer.ServeHTTP(w, r)
 	}))
 
 	return r
+}
+
+// setStaticCacheHeaders applies Cache-Control to static assets based on
+// the URL path. Vite emits content-hashed filenames under /assets/ — those
+// are safe to cache forever (immutable). Anything else, including the
+// index.html SPA shell, gets no-cache so a redeploy is picked up
+// immediately on the next request.
+func setStaticCacheHeaders(w http.ResponseWriter, path string) {
+	if strings.HasPrefix(path, "/assets/") {
+		w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+		return
+	}
+	w.Header().Set("Cache-Control", "no-cache, no-store, must-revalidate")
 }
