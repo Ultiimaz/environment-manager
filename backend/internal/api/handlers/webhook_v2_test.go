@@ -153,18 +153,26 @@ func TestWebhook_ProjectPush_TriggersBuild(t *testing.T) {
 		t.Fatalf("status = %d, want 200; body=%s", rec.Code, rec.Body.String())
 	}
 
-	// Wait for the goroutine build to be persisted.
-	deadline := time.After(3 * time.Second)
+	// Wait for the goroutine build to reach a terminal status. Stopping at
+	// "running" was racy under -race: t.TempDir cleanup ran while the runner
+	// goroutine still had log files open, producing "directory not empty"
+	// failures. Waiting for a terminal status means the runner has finished
+	// with the temp dir before the test returns.
+	deadline := time.After(5 * time.Second)
 	for {
 		select {
 		case <-deadline:
-			t.Fatal("build triggered by webhook did not appear in time")
+			t.Fatal("webhook build did not reach terminal status in time")
 		default:
 		}
 		builds, _ := store.ListBuildsForEnv("p1", "p1--main")
 		for _, b := range builds {
-			if b.TriggeredBy == models.BuildTriggerWebhook {
-				return // success
+			if b.TriggeredBy != models.BuildTriggerWebhook {
+				continue
+			}
+			switch b.Status {
+			case models.BuildStatusSuccess, models.BuildStatusFailed, models.BuildStatusCancelled:
+				return
 			}
 		}
 		time.Sleep(50 * time.Millisecond)
