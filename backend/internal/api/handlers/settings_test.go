@@ -7,7 +7,7 @@ import (
 )
 
 func TestSettingsHandler(t *testing.T) {
-	h := NewSettingsHandler("ops@example.com", true, "v2-test")
+	h := NewSettingsHandler("ops@example.com", true, "v2-test", nil)
 	req := httptest.NewRequest("GET", "/api/v1/settings", nil)
 	rec := httptest.NewRecorder()
 	h.Get(rec, req)
@@ -19,7 +19,7 @@ func TestSettingsHandler(t *testing.T) {
 }
 
 func TestSettingsHandler_BothUnset(t *testing.T) {
-	h := NewSettingsHandler("", false, "v2-test")
+	h := NewSettingsHandler("", false, "v2-test", nil)
 	req := httptest.NewRequest("GET", "/api/v1/settings", nil)
 	rec := httptest.NewRecorder()
 	h.Get(rec, req)

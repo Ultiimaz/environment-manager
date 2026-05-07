@@ -100,10 +100,19 @@ export interface ServiceStatus {
   exists: boolean
 }
 
+export interface LicenseStatus {
+  valid: boolean
+  reason?: string
+  issued_to?: string
+  expires_at?: string
+  days_left?: number
+}
+
 export interface Settings {
   letsencrypt_email_set: boolean
   credential_store_set: boolean
   version: string
+  license: LicenseStatus
 }
 
 export interface CreateProjectResponse {
@@ -196,21 +205,31 @@ export function getHealth(): Promise<unknown> {
   return fetchApi('/health')
 }
 
-// WebSocket URL helper for build logs
+// WebSocket URLs append ?token= when an admin token is stored. Browsers
+// can't send Authorization headers on WS upgrades, so query-string auth is
+// the standard workaround. In lab mode the server ignores the param; in
+// production (LAB_MODE=false) it's required.
+function wsTokenSuffix(existing?: string): string {
+  const t = getStoredToken()
+  if (!t) return existing || ''
+  const sep = existing ? '&' : '?'
+  return `${existing || ''}${sep}token=${encodeURIComponent(t)}`
+}
+
 export function buildLogWsUrl(envId: string): string {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${window.location.host}/ws/envs/${envId}/build-logs`
+  return `${proto}//${window.location.host}/ws/envs/${envId}/build-logs${wsTokenSuffix()}`
 }
 
 export function envRuntimeLogWsUrl(envId: string, service?: string): string {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
   const qs = service ? `?service=${encodeURIComponent(service)}` : ''
-  return `${proto}//${window.location.host}/ws/envs/${envId}/runtime-logs${qs}`
+  return `${proto}//${window.location.host}/ws/envs/${envId}/runtime-logs${wsTokenSuffix(qs)}`
 }
 
 export function serviceRuntimeLogWsUrl(name: string): string {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:'
-  return `${proto}//${window.location.host}/ws/services/${encodeURIComponent(name)}/runtime-logs`
+  return `${proto}//${window.location.host}/ws/services/${encodeURIComponent(name)}/runtime-logs${wsTokenSuffix()}`
 }
 
 // Topology

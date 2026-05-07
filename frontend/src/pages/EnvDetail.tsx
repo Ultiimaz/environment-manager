@@ -10,6 +10,7 @@ import {
   type Environment,
   type Build,
 } from '@/services/api'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { RuntimeLogViewer } from '@/components/runtime-log-viewer'
 import { BuildLogViewer } from '@/components/projects/build-log-viewer'
@@ -107,7 +108,7 @@ export default function EnvDetail() {
       setTailingLatest(true)
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Trigger failed'
-      alert(msg)
+      toast.error('Build trigger failed', { description: msg })
     }
   }
 

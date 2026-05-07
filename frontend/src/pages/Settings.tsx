@@ -135,6 +135,52 @@ export default function Settings() {
             </dl>
           </div>
         </div>
+
+        {/* License */}
+        {settings.data?.license && (
+          <div className="rounded-lg border border-border bg-card overflow-hidden lg:col-span-2">
+            <div className="px-4 py-3 border-b border-border bg-background/40 flex items-center justify-between">
+              <h2 className="text-[12px] font-semibold uppercase tracking-wider">License</h2>
+              <StatusPill variant={settings.data.license.valid ? 'ok' : 'bad'}>
+                {settings.data.license.valid ? 'valid' : 'invalid'}
+              </StatusPill>
+            </div>
+            <div className="p-4">
+              {!settings.data.license.valid && settings.data.license.reason && (
+                <div className="mb-3 rounded border border-destructive/40 bg-destructive/10 px-3 py-2 text-[12px] text-destructive">
+                  {settings.data.license.reason}
+                </div>
+              )}
+              <dl className="text-[12px] space-y-0">
+                <Row
+                  label="issued to"
+                  value={<span className="font-mono">{settings.data.license.issued_to || '—'}</span>}
+                />
+                <Row
+                  label="expires at"
+                  value={
+                    <span className="font-mono">
+                      {settings.data.license.expires_at
+                        ? new Date(settings.data.license.expires_at).toLocaleString()
+                        : 'never'}
+                    </span>
+                  }
+                />
+                <Row
+                  label="days left"
+                  value={
+                    <span className="font-mono">
+                      {settings.data.license.days_left !== undefined
+                        ? settings.data.license.days_left
+                        : '—'}
+                    </span>
+                  }
+                  last
+                />
+              </dl>
+            </div>
+          </div>
+        )}
       </div>
     </div>
   )
