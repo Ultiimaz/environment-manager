@@ -45,6 +45,8 @@ func main() {
 		runEnvs(os.Args[2:])
 	case "services":
 		runServices(os.Args[2:])
+	case "license":
+		runLicense(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -73,6 +75,9 @@ Usage:
   envm builds list <project>/<env>
   envm envs destroy <project>/<env> [--yes]
   envm services status
+  envm license gen-keypair
+  envm license issue --to "Acme" --private-key KEY [--days 365] [--max-projects N]
+  envm license verify --file FILE --public-key KEY
   envm config show
   envm version
 
