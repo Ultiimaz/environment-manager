@@ -1,4 +1,5 @@
 import { Routes, Route } from 'react-router-dom'
+import { Toaster } from 'sonner'
 import { AppLayout } from './components/layout'
 import Home from './pages/Home'
 import Projects from './pages/Projects'
@@ -12,19 +13,33 @@ import Settings from './pages/Settings'
 
 function App() {
   return (
-    <Routes>
-      <Route path="/" element={<AppLayout />}>
-        <Route index element={<Home />} />
-        <Route path="projects" element={<Projects />} />
-        <Route path="projects/:id" element={<ProjectDetail />} />
-        <Route path="projects/:pid/envs/:envId" element={<EnvDetail />} />
-        <Route path="builds" element={<Builds />} />
-        <Route path="services" element={<Services />} />
-        <Route path="services/:name" element={<ServiceDetail />} />
-        <Route path="topology" element={<Topology />} />
-        <Route path="settings" element={<Settings />} />
-      </Route>
-    </Routes>
+    <>
+      <Routes>
+        <Route path="/" element={<AppLayout />}>
+          <Route index element={<Home />} />
+          <Route path="projects" element={<Projects />} />
+          <Route path="projects/:id" element={<ProjectDetail />} />
+          <Route path="projects/:pid/envs/:envId" element={<EnvDetail />} />
+          <Route path="builds" element={<Builds />} />
+          <Route path="services" element={<Services />} />
+          <Route path="services/:name" element={<ServiceDetail />} />
+          <Route path="topology" element={<Topology />} />
+          <Route path="settings" element={<Settings />} />
+        </Route>
+      </Routes>
+      <Toaster
+        theme="dark"
+        position="bottom-right"
+        toastOptions={{
+          classNames: {
+            toast:
+              'bg-card border border-border text-foreground font-mono text-[12px]',
+            error: 'border-destructive/40 bg-destructive/10 text-destructive',
+            success: 'border-primary/30 bg-primary/10 text-primary',
+          },
+        }}
+      />
+    </>
   )
 }
 

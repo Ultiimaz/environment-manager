@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import { RefreshCw, Play, ExternalLink } from 'lucide-react'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { getProject, triggerBuild } from '@/services/api'
 import type { ProjectDetail, Environment } from '@/services/api'
@@ -151,7 +152,7 @@ export default function ProjectDetailPage() {
       await load()
     } catch (e: unknown) {
       const msg = e instanceof Error ? e.message : 'Trigger failed'
-      alert(msg)
+      toast.error('Build trigger failed', { description: msg })
     } finally {
       setTriggering(null)
     }
