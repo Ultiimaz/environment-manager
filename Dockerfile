@@ -14,9 +14,19 @@ RUN apk add --no-cache git
 COPY backend/go.mod ./
 RUN go mod download || true
 COPY backend/ ./
+ARG VERSION=dev
+# -s -w strips the symbol table + DWARF, ~25% smaller binary.
+# -X main.version stamps the build with the Git SHA / release tag.
+# -trimpath drops the local build path, keeps the binary reproducible.
 RUN go mod tidy && \
-    CGO_ENABLED=0 GOOS=linux go build -o /server ./cmd/server && \
-    CGO_ENABLED=0 GOOS=linux go build -o /envm ./cmd/envm
+    CGO_ENABLED=0 GOOS=linux go build \
+        -trimpath \
+        -ldflags="-s -w -X main.version=${VERSION}" \
+        -o /server ./cmd/server && \
+    CGO_ENABLED=0 GOOS=linux go build \
+        -trimpath \
+        -ldflags="-s -w -X main.version=${VERSION}" \
+        -o /envm ./cmd/envm
 
 # Final image. Alpine 3.21 ships docker-cli 27.x which speaks Docker API
 # 1.47+; 3.19's docker-cli 24.x reports API 1.43 and is rejected by the
