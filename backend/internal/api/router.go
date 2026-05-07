@@ -79,6 +79,7 @@ func NewRouter(cfg RouterConfig) http.Handler {
 		licenseRdr = cfg.License
 	}
 	settingsHandler := handlers.NewSettingsHandler(cfg.LetsencryptEmail, cfg.CredentialStore != nil, cfg.Version, licenseRdr)
+	backupHandler := handlers.NewBackupHandler(cfg.DataDir, cfg.Logger)
 	topologyHandler := handlers.NewTopologyHandler(cfg.ProjectsStore, cfg.DockerClient)
 	runtimeLogsHandler := handlers.NewRuntimeLogsHandler(cfg.DockerLogStream, cfg.ProjectsStore, cfg.Logger, wsCheckOrigin)
 
@@ -113,6 +114,16 @@ func NewRouter(cfg RouterConfig) http.Handler {
 			r.Get("/services/redis", servicesHandler.Redis)
 			r.Get("/settings", settingsHandler.Get)
 			r.Get("/topology", topologyHandler.Get)
+		})
+
+		// Admin endpoints — always require admin token, regardless of
+		// LAB_MODE. The backup tar contains the encrypted credential store
+		// and project state; it must never be openly downloadable.
+		// License enforcement does NOT block backup: an operator with an
+		// expired license still needs to be able to take their data out.
+		r.Group(func(r chi.Router) {
+			auth(r)
+			r.Get("/admin/backup", backupHandler.Get)
 		})
 
 		// Mutating endpoints — always require admin token (when one exists)

@@ -47,6 +47,8 @@ func main() {
 		runServices(os.Args[2:])
 	case "license":
 		runLicense(os.Args[2:])
+	case "backup":
+		runBackup(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -78,6 +80,7 @@ Usage:
   envm license gen-keypair
   envm license issue --to "Acme" --private-key KEY [--days 365] [--max-projects N]
   envm license verify --file FILE --public-key KEY
+  envm backup [--out FILE]
   envm config show
   envm version
 
