@@ -28,19 +28,27 @@ type RuntimeLogStreamer interface {
 // for environment service containers and the singleton service-plane
 // containers (paas-postgres, paas-redis).
 type RuntimeLogsHandler struct {
-	docker RuntimeLogStreamer
-	store  *projects.Store
-	logger *zap.Logger
+	docker   RuntimeLogStreamer
+	store    *projects.Store
+	logger   *zap.Logger
+	upgrader *websocket.Upgrader
 }
 
 // NewRuntimeLogsHandler wires the dependencies. docker may be nil — handlers
-// then return 503 immediately.
-func NewRuntimeLogsHandler(docker RuntimeLogStreamer, store *projects.Store, logger *zap.Logger) *RuntimeLogsHandler {
-	return &RuntimeLogsHandler{docker: docker, store: store, logger: logger}
-}
-
-var runtimeUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
+// then return 503 immediately. checkOrigin policies cross-origin WS upgrades;
+// pass nil only in tests.
+func NewRuntimeLogsHandler(docker RuntimeLogStreamer, store *projects.Store, logger *zap.Logger, checkOrigin func(*http.Request) bool) *RuntimeLogsHandler {
+	if checkOrigin == nil {
+		checkOrigin = func(*http.Request) bool { return true }
+	}
+	return &RuntimeLogsHandler{
+		docker: docker,
+		store:  store,
+		logger: logger,
+		upgrader: &websocket.Upgrader{
+			CheckOrigin: checkOrigin,
+		},
+	}
 }
 
 // allowedSingletonServices guards which container names the service-logs
@@ -118,7 +126,7 @@ func (h *RuntimeLogsHandler) streamContainer(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	conn, err := runtimeUpgrader.Upgrade(w, r, nil)
+	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}

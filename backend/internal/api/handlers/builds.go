@@ -25,15 +25,31 @@ import (
 // BuildsHandler exposes /envs/{id}/build endpoints.
 // EnvIDs use the "<project_id>--<branch_slug>" convention.
 type BuildsHandler struct {
-	store   *projects.Store
-	runner  *builder.Runner
-	dataDir string
-	logger  *zap.Logger
+	store    *projects.Store
+	runner   *builder.Runner
+	dataDir  string
+	logger   *zap.Logger
+	upgrader *websocket.Upgrader
 }
 
 // NewBuildsHandler wires the handler.
-func NewBuildsHandler(store *projects.Store, runner *builder.Runner, dataDir string, logger *zap.Logger) *BuildsHandler {
-	return &BuildsHandler{store: store, runner: runner, dataDir: dataDir, logger: logger}
+//
+// checkOrigin is the WebSocket origin allow-list. Pass nil only in tests; in
+// that case the handler accepts any origin. Production callers MUST supply a
+// real check (origin.CheckOrigin(baseDomain)).
+func NewBuildsHandler(store *projects.Store, runner *builder.Runner, dataDir string, logger *zap.Logger, checkOrigin func(*http.Request) bool) *BuildsHandler {
+	if checkOrigin == nil {
+		checkOrigin = func(*http.Request) bool { return true }
+	}
+	return &BuildsHandler{
+		store:   store,
+		runner:  runner,
+		dataDir: dataDir,
+		logger:  logger,
+		upgrader: &websocket.Upgrader{
+			CheckOrigin: checkOrigin,
+		},
+	}
 }
 
 // TriggerBuildResponse is returned from POST /api/v1/envs/{id}/build.
@@ -130,12 +146,6 @@ func splitEnvID(envID string) (projectID, branchSlug string, ok bool) {
 	return envID[:idx], envID[idx+2:], true
 }
 
-// streamUpgrader holds the websocket upgrader. CheckOrigin returns true
-// because the same origin assumption applies as in container log streaming.
-var streamUpgrader = websocket.Upgrader{
-	CheckOrigin: func(r *http.Request) bool { return true },
-}
-
 // StreamLogs handles GET /ws/envs/{id}/build-logs.
 //
 // Streams the env's most recent build log file over WebSocket. While
@@ -159,7 +169,7 @@ func (h *BuildsHandler) StreamLogs(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	conn, err := streamUpgrader.Upgrade(w, r, nil)
+	conn, err := h.upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		return
 	}

@@ -35,12 +35,24 @@ func BearerAuth(store AdminTokenStore) func(http.Handler) http.Handler {
 				return
 			}
 
-			h := r.Header.Get("Authorization")
-			if h == "" || !strings.HasPrefix(h, "Bearer ") {
-				respondError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or malformed Authorization header")
+			// Header is the primary source. Query string is a fallback because
+			// browser WebSocket clients can't set Authorization on the upgrade
+			// request — the manager UI passes the token via ?token= for WS
+			// streams. URL tokens leak into proxy logs, so this is only a
+			// fallback for clients that genuinely can't send a header.
+			var given string
+			if h := r.Header.Get("Authorization"); h != "" {
+				if !strings.HasPrefix(h, "Bearer ") {
+					respondError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing or malformed Authorization header")
+					return
+				}
+				given = strings.TrimPrefix(h, "Bearer ")
+			} else if q := r.URL.Query().Get("token"); q != "" {
+				given = q
+			} else {
+				respondError(w, http.StatusUnauthorized, "UNAUTHORIZED", "missing Authorization header or ?token=")
 				return
 			}
-			given := strings.TrimPrefix(h, "Bearer ")
 			// Reject leading whitespace — RFC 6750 requires exactly one space
 			// after "Bearer". Trim only trailing whitespace (browser/proxy noise).
 			if given == "" || strings.HasPrefix(given, " ") || strings.HasPrefix(given, "\t") {

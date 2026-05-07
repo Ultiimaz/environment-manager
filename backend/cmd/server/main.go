@@ -19,6 +19,7 @@ import (
 	"github.com/environment-manager/backend/internal/config"
 	"github.com/environment-manager/backend/internal/credentials"
 	"github.com/environment-manager/backend/internal/docker"
+	"github.com/environment-manager/backend/internal/license"
 	"github.com/environment-manager/backend/internal/models"
 	"github.com/environment-manager/backend/internal/projects"
 	"github.com/environment-manager/backend/internal/repos"
@@ -165,6 +166,15 @@ func main() {
 		logger.Info("Reconcile complete", zap.Strings("changes", summaries))
 	}
 
+	// License watcher. Enforce=false (default) makes this a no-op that
+	// always reports valid. Enforce=true reads + verifies cfg.LicenseFile
+	// at boot and re-checks it hourly.
+	licenseWatcher := license.NewWatcher(cfg.LicenseEnforce, cfg.LicensePublicKey, cfg.LicenseFile, logger)
+	licenseWatcher.Reload()
+	licenseCtx, licenseCancel := context.WithCancel(context.Background())
+	defer licenseCancel()
+	go licenseWatcher.Run(licenseCtx, time.Hour)
+
 	// Router
 	router := api.NewRouter(api.RouterConfig{
 		ReposManager:     reposManager,
@@ -174,11 +184,13 @@ func main() {
 		StaticDir:        cfg.StaticDir,
 		DataDir:          cfg.DataDir,
 		BaseDomain:       cfg.BaseDomain,
+		LabMode:          cfg.LabMode,
 		Logger:           logger,
 		DockerClient:     dockerCli,
 		DockerLogStream:  dockerCli,
 		LetsencryptEmail: cfg.LetsencryptEmail,
 		Version:          version,
+		License:          licenseWatcher,
 	})
 
 	server := &http.Server{

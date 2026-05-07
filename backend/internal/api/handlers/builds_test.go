@@ -30,7 +30,7 @@ func newBuildsHandlerTest(t *testing.T) (*BuildsHandler, *projects.Store, string
 	dataDir := t.TempDir()
 	store, _ := projects.NewStore(dataDir)
 	r := builder.NewRunner(store, fakeExec{}, dataDir, "", builder.NewQueue(), zap.NewNop(), nil)
-	h := NewBuildsHandler(store, r, dataDir, zap.NewNop())
+	h := NewBuildsHandler(store, r, dataDir, zap.NewNop(), nil)
 	return h, store, dataDir
 }
 
@@ -136,7 +136,7 @@ func TestBuildsHandler_List(t *testing.T) {
 	_ = store.SaveBuild("p1", &models.Build{ID: "b1", EnvID: "p1--main", Status: models.BuildStatusSuccess, StartedAt: now.Add(-1 * time.Minute)})
 	_ = store.SaveBuild("p1", &models.Build{ID: "b2", EnvID: "p1--main", Status: models.BuildStatusRunning, StartedAt: now})
 
-	h := NewBuildsHandler(store, nil, dir, zap.NewNop())
+	h := NewBuildsHandler(store, nil, dir, zap.NewNop(), nil)
 	req := httptest.NewRequest("GET", "/api/v1/envs/p1--main/builds", nil)
 	req = withChiURLParams(req, map[string]string{"id": "p1--main"})
 	rec := httptest.NewRecorder()

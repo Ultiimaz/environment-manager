@@ -100,6 +100,43 @@ func TestBearerAuth_RejectsMalformedHeader(t *testing.T) {
 	}
 }
 
+func TestBearerAuth_AllowsValidQueryToken(t *testing.T) {
+	// WS upgrades can't set Authorization headers — the middleware accepts
+	// ?token= as a fallback.
+	mw := BearerAuth(&fakeTokenStore{token: "envm_abc"})
+	called := false
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		called = true
+		w.WriteHeader(http.StatusOK)
+	}))
+
+	req := httptest.NewRequest("GET", "/ws/envs/x/build-logs?token=envm_abc", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if !called {
+		t.Error("expected handler to be invoked for valid query token")
+	}
+	if rec.Code != http.StatusOK {
+		t.Errorf("status = %d, want 200", rec.Code)
+	}
+}
+
+func TestBearerAuth_RejectsWrongQueryToken(t *testing.T) {
+	mw := BearerAuth(&fakeTokenStore{token: "envm_correct"})
+	handler := mw(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		t.Fatal("handler invoked for wrong query token")
+	}))
+
+	req := httptest.NewRequest("GET", "/ws/envs/x/build-logs?token=envm_wrong", nil)
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	if rec.Code != http.StatusUnauthorized {
+		t.Errorf("status = %d, want 401", rec.Code)
+	}
+}
+
 func TestBearerAuth_FailOpenWhenStoreUnavailable(t *testing.T) {
 	// If cred-store fails (e.g. disk error), we should NOT serve the request —
 	// fail closed. Returns 503 (service unavailable) rather than 401 because
