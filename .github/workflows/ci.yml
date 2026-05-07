@@ -44,9 +44,12 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      # pnpm version is pinned in frontend/package.json#packageManager;
-      # action-setup reads it from there.
+      # Keep this in sync with frontend/package.json#packageManager.
+      # action-setup@v4 doesn't always auto-resolve packageManager when the
+      # spec has no integrity hash — pinning explicitly avoids the flake.
       - uses: pnpm/action-setup@v4
+        with:
+          version: '10.12.4'
 
       - uses: actions/setup-node@v4
         with:
