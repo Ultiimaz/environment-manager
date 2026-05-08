@@ -8,7 +8,7 @@ COPY frontend/ ./
 RUN pnpm build
 
 # Build backend
-FROM golang:1.24-alpine AS backend-builder
+FROM golang:1.26-alpine AS backend-builder
 WORKDIR /app
 RUN apk add --no-cache git
 COPY backend/go.mod ./
