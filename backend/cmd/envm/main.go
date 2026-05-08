@@ -49,6 +49,8 @@ func main() {
 		runLicense(os.Args[2:])
 	case "backup":
 		runBackup(os.Args[2:])
+	case "admin-token":
+		runAdminToken(os.Args[2:])
 	case "help", "-h", "--help":
 		usage()
 	default:
@@ -81,6 +83,7 @@ Usage:
   envm license issue --to "Acme" --private-key KEY [--days 365] [--max-projects N]
   envm license verify --file FILE --public-key KEY
   envm backup [--out FILE]
+  envm admin-token show|rotate          (server-local: needs DATA_DIR + CREDENTIAL_KEY)
   envm config show
   envm version
 
