@@ -1,0 +1,28 @@
+# Preview-environment compose. Used for every branch that isn't the
+# project's default branch. Same image, but typically with cheaper
+# resources and dev-only flags.
+#
+# Each preview env gets its own DATABASE_URL into a per-env DB so
+# previews don't clobber each other's data.
+services:
+  web:
+    image: ${IMAGE_NAME:-my-app}:latest
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=preview
+      - PORT=8080
+      - DATABASE_URL=${DATABASE_URL}
+      # Skip Stripe in preview — set a test key in the credential store
+      # under the same name and it'll be injected here too.
+      - STRIPE_API_KEY=${STRIPE_API_KEY}
+      - SENTRY_DSN=${SENTRY_DSN}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 256M

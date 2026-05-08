@@ -1,0 +1,53 @@
+# env-manager .dev/config.yaml — full reference example
+#
+# Drop this file at the repo root, alongside .dev/docker-compose.prod.yml
+# and .dev/docker-compose.dev.yml. Push to deploy.
+
+# Required. Used for the auto-generated subdomain and the credential-store
+# scope. Lower-case, hyphenated; treated as a slug.
+project_name: my-app
+
+# Required. Tells Traefik which compose service + port to route external
+# traffic to. The compose stack can have any number of other services
+# (workers, db migrations, etc.) — those don't need to be exposed.
+expose:
+  service: web
+  port: 8080
+
+# Optional. Custom prod domains and preview-domain templating.
+# Leaving this section out is fine — every env still gets a *.home address
+# automatically.
+domains:
+  prod:
+    - my-app.example.com
+    - www.my-app.example.com
+  preview:
+    # {branch} is substituted with the slugified branch name at deploy time.
+    pattern: "{branch}.preview.my-app.example.com"
+
+# Optional. Set to true to opt into the shared service-plane singletons.
+# env-manager provisions a per-env database / ACL user and injects the
+# corresponding URL as DATABASE_URL / REDIS_URL env vars. Dropping the
+# environment cleans the database/user back up.
+services:
+  postgres: true
+  redis: false
+
+# Optional. Names of secrets that the environment expects. The values
+# live in the encrypted credential store (set via the UI or CLI), not
+# here. Listing them documents the surface and lets the dashboard show
+# which keys are missing.
+secrets:
+  - SESSION_SIGNING_KEY
+  - STRIPE_API_KEY
+  - SENTRY_DSN
+
+# Optional. Commands to run inside the freshly-built app container.
+# pre_deploy: blocking — non-zero exit aborts the deploy.
+# post_deploy: non-blocking — failures are logged.
+hooks:
+  pre_deploy:
+    - ./bin/migrate
+    - ./bin/healthcheck
+  post_deploy:
+    - ./bin/warm-cache
