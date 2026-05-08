@@ -1,0 +1,32 @@
+services:
+  web:
+    image: ${IMAGE_NAME:-my-app}:latest
+    restart: unless-stopped
+    environment:
+      - NODE_ENV=production
+      - PORT=8080
+      # DATABASE_URL is injected automatically when services.postgres is true.
+      - DATABASE_URL=${DATABASE_URL}
+      # Secrets listed in .dev/config.yaml#secrets are injected from the
+      # credential store under their declared names.
+      - SESSION_SIGNING_KEY=${SESSION_SIGNING_KEY}
+      - STRIPE_API_KEY=${STRIPE_API_KEY}
+      - SENTRY_DSN=${SENTRY_DSN}
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+      start_period: 30s
+
+  # Background worker — not exposed to Traefik because it's not the
+  # service named in .dev/config.yaml#expose.service.
+  worker:
+    image: ${IMAGE_NAME:-my-app}:latest
+    restart: unless-stopped
+    command: ["./bin/worker"]
+    environment:
+      - DATABASE_URL=${DATABASE_URL}
+    depends_on:
+      web:
+        condition: service_healthy
