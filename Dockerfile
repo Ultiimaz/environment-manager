@@ -31,7 +31,7 @@ RUN go mod tidy && \
 # Final image. Alpine 3.21 ships docker-cli 27.x which speaks Docker API
 # 1.47+; 3.19's docker-cli 24.x reports API 1.43 and is rejected by the
 # host daemon (Docker 29.x, MinAPI 1.44) when builder.Runner shells out.
-FROM alpine:3.21
+FROM alpine:3.23
 
 # Install git, git-lfs, and the docker CLI (with compose v2 plugin) so the
 # compose handler can shell out to `docker-compose` when rebuilding linked
