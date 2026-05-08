@@ -1,0 +1,44 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    # Mondays 03:17 UTC. Off-peak so it doesn't queue against CI runs.
+    - cron: '17 3 * * 1'
+
+permissions:
+  contents: read
+  security-events: write
+
+jobs:
+  analyze:
+    name: analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # JavaScript covers TypeScript too via the same extractor.
+        language: [go, javascript-typescript]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # security-extended adds higher-precision queries; security-and-quality
+          # also runs maintainability rules (off by default — too noisy).
+          queries: security-extended
+
+      - name: build go (only when scanning go)
+        if: matrix.language == 'go'
+        working-directory: backend
+        run: |
+          go mod download
+          go build ./...
+
+      - uses: github/codeql-action/analyze@v3
+        with:
+          category: /language:${{ matrix.language }}
