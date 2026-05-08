@@ -47,7 +47,7 @@ jobs:
       # Keep this in sync with frontend/package.json#packageManager.
       # action-setup@v4 doesn't always auto-resolve packageManager when the
       # spec has no integrity hash — pinning explicitly avoids the flake.
-      - uses: pnpm/action-setup@v4
+      - uses: pnpm/action-setup@v6
         with:
           version: '10.12.4'
 
