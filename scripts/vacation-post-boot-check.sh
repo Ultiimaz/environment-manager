@@ -45,9 +45,12 @@ for c in "${EXPECTED[@]}"; do
 done
 
 echo
-echo "=== DNS resolution (via env-coredns at 192.168.1.4) ==="
+echo "=== DNS resolution (probed from a macvlan-attached container) ==="
+# The host can't reach macvlan IPs from itself (Linux bridge isolation) so we
+# probe from inside a temporary container joined to my-macvlan-net.
 for h in manager.home traefik.home kanban.home; do
-  if dig +short +time=2 +tries=1 @192.168.1.4 "$h" 2>/dev/null | grep -qE '[0-9]'; then
+  if docker run --rm --network my-macvlan-net alpine:3.21 \
+       sh -c "nslookup $h 192.168.1.4 2>/dev/null | grep -qE 'Address.*[0-9]'" 2>/dev/null; then
     echo "  OK    $h"
   else
     echo "  FAIL  $h does not resolve via env-coredns"
@@ -56,19 +59,32 @@ for h in manager.home traefik.home kanban.home; do
 done
 
 echo
-echo "=== HTTP probes ==="
-probe() {
-  local label="$1" url="$2"
-  if curl -sSf -m 5 -o /dev/null "$url"; then
-    echo "  OK    $label  ($url)"
+echo "=== HTTP probes (from a macvlan-attached container) ==="
+# Probe by IP + Host header instead of by hostname. musl-libc (alpine) curl
+# trips over CoreDNS's SERVFAIL-on-AAAA responses and reports "Could not
+# resolve host" even though nslookup against the same DNS works. Going by IP
+# sidesteps the resolver while still exercising the Traefik route.
+probe_traefik() {
+  local label="$1" host="$2" path="${3:-/}"
+  if docker run --rm --network my-macvlan-net curlimages/curl:latest \
+       -sSf -m 5 -o /dev/null -H "Host: $host" "http://192.168.1.6$path" 2>/dev/null; then
+    echo "  OK    $label  (Host: $host)"
   else
-    echo "  FAIL  $label  ($url)"
+    echo "  FAIL  $label  (Host: $host)"
     fail=$((fail+1))
   fi
 }
-probe "env-manager"        "http://192.168.1.7:8080/"
-probe "traefik dashboard"  "http://192.168.1.6:8080/api/overview"
-probe "portainer"          "http://192.168.1.116:9000/"
+probe_traefik "env-manager"        "manager.home"
+probe_traefik "traefik dashboard"  "traefik.home"
+probe_traefik "kanban"             "kanban.home"
+# Portainer is on the host's bridge network so it IS reachable from host,
+# unlike the macvlan services. Probe directly.
+if curl -sSf -m 5 -o /dev/null http://192.168.1.116:9000/; then
+  echo "  OK    portainer  (http://192.168.1.116:9000/)"
+else
+  echo "  FAIL  portainer  (http://192.168.1.116:9000/)"
+  fail=$((fail+1))
+fi
 
 echo
 echo "=== Recent docker daemon errors (last 50 lines, filtered) ==="
