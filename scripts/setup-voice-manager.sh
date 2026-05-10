@@ -29,6 +29,25 @@ if [[ -f "$SCRIPT_DIR/patch-voice-textbind.py" ]]; then
   docker exec "$CONTAINER" python3 /tmp/patch-voice-textbind.py
 fi
 
+echo "==> [3b/4] bumping VOICE_TIMEOUT 300s -> 1800s (agent work between voice events)"
+# Idempotent — only rewrites if the constant still equals 300. The line is
+# indented (class attribute), so match leading whitespace and preserve it.
+docker exec -u 0 "$CONTAINER" python3 - <<'PY'
+import pathlib, re
+p = pathlib.Path("/opt/hermes/gateway/platforms/discord.py")
+src = p.read_text()
+new, n = re.subn(
+    r'^(\s*)VOICE_TIMEOUT\s*=\s*300\b',
+    r'\1VOICE_TIMEOUT = 1800',
+    src, count=1, flags=re.MULTILINE,
+)
+if n:
+    p.write_text(new)
+    print("VOICE_TIMEOUT bumped to 1800")
+else:
+    print("VOICE_TIMEOUT already patched or constant moved — no-op")
+PY
+
 echo "==> [3/4] voice config in $CONFIG"
 # Strip any existing top-level `voice:` block, then append the canonical one.
 python3 - <<PY
