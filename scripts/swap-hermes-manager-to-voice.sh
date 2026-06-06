@@ -50,6 +50,8 @@ docker stop -t 15 "$OLD"
 docker rename "$OLD" "$BACKUP"
 
 echo "==> Creating new container from $NEW_IMAGE"
+# --add-host bypasses Docker's embedded DNS for *.home — see comment in
+# recreate-hermes-manager-with-env.sh for the macvlan isolation context.
 docker run -d \
   --name "$OLD" \
   --restart unless-stopped \
@@ -57,6 +59,9 @@ docker run -d \
   --network "$NETWORK" --ip "$IP" \
   $BINDS \
   --env-file "$ENV_FILE" \
+  --add-host kanban.home:192.168.1.6 \
+  --add-host manager.home:192.168.1.6 \
+  --add-host traefik.home:192.168.1.6 \
   "$NEW_IMAGE" $CMD
 
 echo "==> Waiting 10s for startup"

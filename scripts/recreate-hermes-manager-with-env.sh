@@ -35,6 +35,10 @@ docker stop -t 15 "$OLD"
 docker rename "$OLD" "$BACKUP"
 
 echo "==> Creating new container with $ENV_FILE as env source"
+# --add-host bypasses Docker's embedded DNS (which forwards through the
+# host and fails for *.home because the host can't reach 192.168.1.4 due
+# to macvlan isolation). 192.168.1.6 is env-traefik, which routes by Host
+# header to env-manager / kanban / etc.
 docker run -d \
   --name "$OLD" \
   --restart unless-stopped \
@@ -42,6 +46,9 @@ docker run -d \
   --network "$NETWORK" --ip "$IP" \
   -v "$BIND" \
   --env-file "$ENV_FILE" \
+  --add-host kanban.home:192.168.1.6 \
+  --add-host manager.home:192.168.1.6 \
+  --add-host traefik.home:192.168.1.6 \
   "$IMAGE" gateway run
 
 echo "==> Waiting 12s for startup"
