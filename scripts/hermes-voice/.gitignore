@@ -1,5 +1,6 @@
-# discord.patched.py is extracted at build time from the running
-# hermes-manager container — see Dockerfile header for the one-liner.
-# Don't commit it; it's derivative code from Hermes upstream and will
-# rot if checked in.
+# discord.patched.py and run.patched.py are extracted at build time
+# from the running hermes-manager container — see Dockerfile header for
+# the one-liner. Don't commit them; they're derivative code from Hermes
+# upstream and will rot if checked in.
 discord.patched.py
+run.patched.py

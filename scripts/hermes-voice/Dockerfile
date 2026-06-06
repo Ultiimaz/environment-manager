@@ -42,10 +42,19 @@ RUN uv pip install --python /opt/hermes/.venv \
       pynacl
 
 # Bake in the patched discord.py (contains blocksweb-auto-join-patch +
-# blocksweb-auto-join-textbind + VOICE_TIMEOUT=1800). Sourced from the
-# running hermes-manager — see header comment for refresh procedure.
+# blocksweb-auto-join-textbind + VOICE_TIMEOUT=1800) AND the patched
+# run.py (contains blocksweb-back-ref-patch — sets adapter._gateway_run
+# so discord.py's auto-join logic can wire voice callbacks). Both sourced
+# from the running hermes-manager — see header comment for refresh.
+#
+# Refresh both at once:
+#   docker exec hermes-manager cat /opt/hermes/gateway/platforms/discord.py \
+#     > /opt/src/hermes-voice/discord.patched.py
+#   docker exec hermes-manager cat /opt/hermes/gateway/run.py \
+#     > /opt/src/hermes-voice/run.patched.py
 COPY discord.patched.py /opt/hermes/gateway/platforms/discord.py
-RUN chown 10000:10000 /opt/hermes/gateway/platforms/discord.py
+COPY run.patched.py     /opt/hermes/gateway/run.py
+RUN chown 10000:10000 /opt/hermes/gateway/platforms/discord.py /opt/hermes/gateway/run.py
 
 # Switch back to the runtime user that hermes:local uses.
 # HERMES_UID is set in the base image env to 10000.
