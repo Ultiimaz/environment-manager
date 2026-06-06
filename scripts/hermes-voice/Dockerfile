@@ -41,20 +41,25 @@ RUN uv pip install --python /opt/hermes/.venv \
       edge-tts \
       pynacl
 
-# Bake in the patched discord.py (contains blocksweb-auto-join-patch +
-# blocksweb-auto-join-textbind + VOICE_TIMEOUT=1800) AND the patched
-# run.py (contains blocksweb-back-ref-patch — sets adapter._gateway_run
-# so discord.py's auto-join logic can wire voice callbacks). Both sourced
-# from the running hermes-manager — see header comment for refresh.
+# Bake in three patched files extracted from a running hermes-manager:
+#   discord.py — blocksweb-auto-join-patch + textbind + VOICE_TIMEOUT=1800
+#   run.py     — blocksweb-back-ref-patch (sets adapter._gateway_run) +
+#                 the ⚡ stripped from the interrupt stub
+#   session.py — blocksweb-merge-sessions-per-user (keys Discord sessions
+#                by user_id when /opt/data/.merge_sessions_per_user exists)
 #
-# Refresh both at once:
-#   docker exec hermes-manager cat /opt/hermes/gateway/platforms/discord.py \
-#     > /opt/src/hermes-voice/discord.patched.py
-#   docker exec hermes-manager cat /opt/hermes/gateway/run.py \
-#     > /opt/src/hermes-voice/run.patched.py
+# Refresh all three at once:
+#   for f in platforms/discord.py run.py session.py; do
+#     docker exec hermes-manager cat /opt/hermes/gateway/$f \
+#       > /opt/src/hermes-voice/$(basename $f .py).patched.py
+#   done
 COPY discord.patched.py /opt/hermes/gateway/platforms/discord.py
 COPY run.patched.py     /opt/hermes/gateway/run.py
-RUN chown 10000:10000 /opt/hermes/gateway/platforms/discord.py /opt/hermes/gateway/run.py
+COPY session.patched.py /opt/hermes/gateway/session.py
+RUN chown 10000:10000 \
+      /opt/hermes/gateway/platforms/discord.py \
+      /opt/hermes/gateway/run.py \
+      /opt/hermes/gateway/session.py
 
 # Switch back to the runtime user that hermes:local uses.
 # HERMES_UID is set in the base image env to 10000.
