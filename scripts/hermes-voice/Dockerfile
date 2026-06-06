@@ -57,11 +57,13 @@ COPY discord.patched.py             /opt/hermes/gateway/platforms/discord.py
 COPY run.patched.py                 /opt/hermes/gateway/run.py
 COPY session.patched.py             /opt/hermes/gateway/session.py
 COPY transcription_tools.patched.py /opt/hermes/tools/transcription_tools.py
+COPY tts_tool.patched.py            /opt/hermes/tools/tts_tool.py
 RUN chown 10000:10000 \
       /opt/hermes/gateway/platforms/discord.py \
       /opt/hermes/gateway/run.py \
       /opt/hermes/gateway/session.py \
-      /opt/hermes/tools/transcription_tools.py
+      /opt/hermes/tools/transcription_tools.py \
+      /opt/hermes/tools/tts_tool.py
 
 # Switch back to the runtime user that hermes:local uses.
 # HERMES_UID is set in the base image env to 10000.
