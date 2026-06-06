@@ -5,3 +5,4 @@
 discord.patched.py
 run.patched.py
 session.patched.py
+transcription_tools.patched.py

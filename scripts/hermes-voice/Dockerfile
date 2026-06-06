@@ -53,13 +53,15 @@ RUN uv pip install --python /opt/hermes/.venv \
 #     docker exec hermes-manager cat /opt/hermes/gateway/$f \
 #       > /opt/src/hermes-voice/$(basename $f .py).patched.py
 #   done
-COPY discord.patched.py /opt/hermes/gateway/platforms/discord.py
-COPY run.patched.py     /opt/hermes/gateway/run.py
-COPY session.patched.py /opt/hermes/gateway/session.py
+COPY discord.patched.py             /opt/hermes/gateway/platforms/discord.py
+COPY run.patched.py                 /opt/hermes/gateway/run.py
+COPY session.patched.py             /opt/hermes/gateway/session.py
+COPY transcription_tools.patched.py /opt/hermes/tools/transcription_tools.py
 RUN chown 10000:10000 \
       /opt/hermes/gateway/platforms/discord.py \
       /opt/hermes/gateway/run.py \
-      /opt/hermes/gateway/session.py
+      /opt/hermes/gateway/session.py \
+      /opt/hermes/tools/transcription_tools.py
 
 # Switch back to the runtime user that hermes:local uses.
 # HERMES_UID is set in the base image env to 10000.
