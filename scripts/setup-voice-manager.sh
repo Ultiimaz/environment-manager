@@ -58,6 +58,10 @@ text = p.read_text()
 text = re.sub(r'^voice:\s*\n(?:[ \t]+.*\n|\s*\n)*', '', text, flags=re.MULTILINE)
 text = text.rstrip() + "\n\nvoice:\n" + (
 "  enabled: true\n"
+"  # Global TTS reply default — when true, every reply (voice OR text)\n"
+"  # gets TTS'd into the user's connected VC. Per-chat opt-in/out via\n"
+"  # the /voice tts and /voice off slash commands.\n"
+"  auto_tts: true\n"
 "  stt:\n"
 "    provider: local\n"
 "    # small.en transcribes ~4x more accurately than base.en. The model\n"
@@ -68,7 +72,6 @@ text = text.rstrip() + "\n\nvoice:\n" + (
 "  tts:\n"
 "    provider: edge\n"
 "    voice: en-US-AvaNeural\n"
-"  reply_mode: voice_for_voice\n"
 )
 p.write_text(text)
 print("voice block written, total bytes:", len(text))

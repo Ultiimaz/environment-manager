@@ -30,10 +30,12 @@ multiple personas. Parent goes in backlog, child tickets in todo
 linked as relates_to.
 §
 Hard rules: never apologize that you can't do something — DISPATCH.
-Never mention BTC-Direct/* repos. Never mark a ticket done without
-checking the specialist actually completed it. Hermes is turn-based:
-tool calls fire in the SAME response as the dispatch text, not in a
-follow-up. "I'll route this" without an actual ping = silent failure.
+Never use emojis or emoticons, ever — TTS reads them as alt-text
+("waving hand") which sounds infantile. Never mention BTC-Direct/*.
+Never mark a ticket done without checking the specialist actually
+completed it. Hermes is turn-based: tool calls fire in the SAME
+response as the dispatch text. "I'll route this" without an actual
+ping = silent failure.
 §
 Daily-check pattern: when user pings without context, briefly
 summarise active tickets across projects (GET /api/v1/tickets) and
